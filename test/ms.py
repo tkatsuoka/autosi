@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import matplotlib.pyplot as plt
 import numpy as np
 
-import sipy as si
+import autosi as si
 
 rng = np.random.default_rng(0)
 beta = np.zeros(10)

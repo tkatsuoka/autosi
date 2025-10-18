@@ -5,7 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 
-import sipy as si
+import autosi as si
 
 # ===== データの生成 =====
 np.random.seed(42)
@@ -60,6 +60,7 @@ for iteration in range(max_iter):
         
         coef[j] = si.where(rho < -lambda_val, rho + lambda_val, 0) 
         coef[j] += si.where(rho > lambda_val, rho - lambda_val, 0)
+        
 
     # 収束判定
     if np.sum(np.abs(coef - coef_old)) < tol:
@@ -68,3 +69,13 @@ for iteration in range(max_iter):
 
 # ===== 結果の表示 =====
 print(f"{coef=}")
+
+# 選ばれた特徴量のインデックス
+selected_features = np.where(coef != 0)[0]
+print(f"選ばれた特徴量のインデックス: {selected_features}")
+
+# 選ばれた特徴のインデックスで最初のものを使って推論
+eta = (X_train.T @ X_train).inv() @ X_train.T
+idx = selected_features[0]
+result = si.inference(eta=eta[idx], prob_vec=y_train, var=1.0, model=idx)
+print(f"特徴量 {idx} のp値: {result.p_value}")

@@ -28,6 +28,7 @@ class OpType(Enum):
     CONSTANT = "constant"
     ABS = "abs"
     ARGSORT = "argsort"
+    WHERE = "where"
 
 
 class Node:
@@ -336,6 +337,22 @@ class siarray:
             axis=axis,
             kind=kind,
             order=order,
+            output=result_data,
+        )
+        return result
+
+    def where(self, condition, x, y):
+        """条件に基づいて要素を選択"""
+        condition = self._to_siarray(condition)
+        x = self._to_siarray(x)
+        y = self._to_siarray(y)
+        result_data = np.where(condition.data, x.data, y.data)
+        result = siarray.__new__(siarray)
+        result.data = result_data
+        result.name = f"where({condition.name}, {x.name}, {y.name})"
+        result.node = Node(
+            OpType.CONSTANT,
+            input_node=[condition.node, x.node, y.node],
             output=result_data,
         )
         return result
@@ -716,6 +733,33 @@ def argsort(x, axis=-1, kind=None, order=None):
         return x.argsort(axis=axis, kind=kind, order=order)
 
 
+def where(condition, x, y):
+    """条件に基づいて要素を選択（グラフ構造を保存）"""
+    # すべてをsiarrayに変換
+
+    if not isinstance(x, siarray):
+        x = siarray.constant(x)
+    if not isinstance(y, siarray):
+        y = siarray.constant(y)
+    
+    # numpy演算で結果を計算
+    result_data = np.where(condition.data, x.data, y.data)
+    
+    # 新しいsiarrayオブジェクトを作成
+    result = siarray.__new__(siarray)
+    result.data = result_data
+    result.name = f"where({condition.name}, {x.name}, {y.name})"
+    
+    # WHEREノードを作成（3つの入力ノードを持つ）
+    result.node = Node(
+        OpType.WHERE,
+        input_node=[condition.node, x.node, y.node],
+        output=result_data,
+    )
+    
+    return result
+
+
 def trace_graph(
     node: Node,
     indent: int = 0,
@@ -1013,22 +1057,6 @@ class GraphToRational:
                 raise NotImplementedError(
                     f"Power {power_data} not supported for RationalFunction"
                 )
-
-        elif node.op_type == OpType.GETITEM:
-            operand = self._convert_node(node.input_node[0])
-            key = node.kwargs.get("key")
-            result = operand[key]
-
-        elif node.op_type == OpType.ABS:
-            raise NotImplementedError(
-                "Absolute value not yet supported for RationalFunction conversion"
-            )
-
-        elif node.op_type == OpType.ARGSORT:
-            raise NotImplementedError(
-                "Argsort not supported for RationalFunction conversion"
-            )
-
         else:
             raise NotImplementedError(
                 f"Operation {node.op_type} not yet supported for RationalFunction conversion"
