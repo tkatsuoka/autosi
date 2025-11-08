@@ -14,7 +14,7 @@ def lasso(y):
     # ===== ハイパーパラメータの設定 =====
     alpha = 0.1  # L1正則化パラメータ
     max_iter = 1000  # 最大反復回数
-    tol = si.siarray(1e-4)  # 収束判定の閾値
+    tol = 1e-4  # 収束判定の閾値（siarrayにしない）
 
     # ===== 係数の初期化 =====
     coef = si.siarray(np.zeros(n_features))
@@ -27,30 +27,28 @@ def lasso(y):
         for j in range(n_features):
             # j番目の特徴量を除いた予測値
             y_pred = X_train @ coef
-            residual = y_train - y_pred + coef[j] * X_train[:, j]
+            residual = y - y_pred + coef[j] * X_train[:, j]
 
             # rhoの計算（残差とj番目の特徴量の内積）
             rho = X_train[:, j] @ residual / n_samples
             lambda_val = alpha / n_samples
-            if (rho < -lambda_val).values():
+            
+            # 比較結果の.dataを使う
+            if (rho < -lambda_val).data:
                 coef[j] = rho + lambda_val
-            elif (rho > lambda_val).values():
+            elif (rho > lambda_val).data:
                 coef[j] = rho - lambda_val
             else:
                 coef[j] = 0.0
+        
         # 収束判定
-        if (si.sum(si.abs(coef - coef_old)) < tol).values():
+        diff = si.sum(si.abs(coef - coef_old)).data
+        if diff < tol:
             print(f"収束（iter: {iteration + 1}）")
             break
     
     # 選ばれた特徴量のインデックス
-    selected_features = []
-    for i in range(n_features):
-        if coef[i].values() != 0:
-            selected_features.append(i)
-
-    # 選ばれた特徴のインデックスで最初のものを使って推論
-    idx = selected_features[0]
+    idx = si.argsort(si.abs(coef))[ -1]
     eta = (X_train.T @ X_train).inv() @ X_train.T
     return eta[idx]
 

@@ -1,5 +1,5 @@
 from .inf import inference
-from .utils import abs, sum, argsort, show_graph, siarray, trace_graph
+from .utils import abs, sum, argsort, siarray
 
 __all__ = [
     "inference",
@@ -7,6 +7,4 @@ __all__ = [
     "argsort",
     "abs",
     "sum",
-    "trace_graph",
-    "show_graph",
 ]
