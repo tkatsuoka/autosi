@@ -1,4 +1,5 @@
 import numpy as np
+
 from sicore import RealSubset, polynomial_iso_sign_interval
 
 
@@ -83,6 +84,77 @@ class RationalFunction:
             [c[key] for c in self.coef_den],
             self.z,
             self.intervals,
+        )
+
+    def __lt__(self, other: "RationalFunction") -> "RationalFunction":
+        """
+        self < other を計算
+        結果として self - other < 0 の条件を intervals に追加
+        """
+        diff = self - other
+        # self - other < 0 の制約を追加
+        neg_num = np.array([-c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num])
+        den = np.array([c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den])
+        new_intervals = calc_polynominal_interval(neg_num, den, self.z, threshold=0.0)
+        
+        # 結果はブール値として扱う（実際の評価結果）
+        result_value = diff.output() < 0
+        return RationalFunction(
+            [result_value.astype(float)],
+            [np.ones_like(result_value, dtype=float)],
+            self.z,
+            new_intervals & diff.intervals
+        )
+    
+    def __le__(self, other: "RationalFunction") -> "RationalFunction":
+        """self <= other"""
+        diff = self - other
+        # self - other <= 0 の制約
+        neg_num = np.array([-c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num])
+        den = np.array([c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den])
+        new_intervals = calc_polynominal_interval(neg_num, den, self.z, threshold=0.0)
+        
+        result_value = diff.output() <= 0
+        return RationalFunction(
+            [result_value.astype(float)],
+            [np.ones_like(result_value, dtype=float)],
+            self.z,
+            new_intervals & diff.intervals
+        )
+    
+    def __gt__(self, other: "RationalFunction") -> "RationalFunction":
+        """
+        self > other を計算
+        結果として self - other > 0 の条件を intervals に追加
+        """
+        diff = self - other
+        # self - other > 0 の制約を追加
+        num = np.array([c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num])
+        den = np.array([c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den])
+        new_intervals = calc_polynominal_interval(num, den, self.z, threshold=0.0)
+        
+        result_value = diff.output() > 0
+        return RationalFunction(
+            [result_value.astype(float)],
+            [np.ones_like(result_value, dtype=float)],
+            self.z,
+            new_intervals & diff.intervals
+        )
+    
+    def __ge__(self, other: "RationalFunction") -> "RationalFunction":
+        """self >= other"""
+        diff = self - other
+        # self - other >= 0 の制約
+        num = np.array([c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num])
+        den = np.array([c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den])
+        new_intervals = calc_polynominal_interval(num, den, self.z, threshold=0.0)
+        
+        result_value = diff.output() >= 0
+        return RationalFunction(
+            [result_value.astype(float)],
+            [np.ones_like(result_value, dtype=float)],
+            self.z,
+            new_intervals & diff.intervals
         )
 
     def T(self) -> "RationalFunction":

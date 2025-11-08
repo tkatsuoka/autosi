@@ -35,7 +35,7 @@ for i in range(10000):
 
     corr = X.T @ y
     eta = (X.T @ X).inv() @ X.T
-    idx = si.argsort(si.abs(corr))[-1]  # !!!!!!!!!!!!!!!!!!!!!!!!
+    idx = si.argsort(si.abs(corr))[-1]
     # print(idx.values())
     # print(si.show_graph(idx))
     result = si.inference(eta=eta[idx], prob_vec=y, var=1.0, model=idx)

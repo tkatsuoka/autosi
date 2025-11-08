@@ -8,74 +8,74 @@ import numpy as np
 import autosi as si
 
 # ===== データの生成 =====
-np.random.seed(42)
-rng = np.random.default_rng(0)
-n_samples = 100
-n_features = 20
 
-beta = np.zeros(n_features)
-X = np.random.randn(n_samples, n_features)
-y = X @ beta + rng.normal(0, 1, n_samples)
 
-y = si.siarray(y)
-X = si.siarray(X)
+def lasso(y):
+    # ===== ハイパーパラメータの設定 =====
+    alpha = 0.1  # L1正則化パラメータ
+    max_iter = 1000  # 最大反復回数
+    tol = si.siarray(1e-4)  # 収束判定の閾値
 
-# 訓練データとテストデータに分割
-split_idx = int(0.8 * n_samples)
-X_train = X[:split_idx]
-X_test = X[split_idx:]
-y_train = y[:split_idx]
-y_test = y[split_idx:]
+    # ===== 係数の初期化 =====
+    coef = si.siarray(np.zeros(n_features))
 
-# ===== ハイパーパラメータの設定 =====
-alpha = 0.1  # L1正則化パラメータ
-max_iter = 1000  # 最大反復回数
-tol = 1e-4  # 収束判定の閾値
+    # ===== Lasso回帰の学習（座標降下法） =====
+    for iteration in range(max_iter):
+        coef_old = coef.copy()
 
-# ===== 係数の初期化 =====
-coef = np.zeros(n_features)
+        # 各特徴量について順番に最適化
+        for j in range(n_features):
+            # j番目の特徴量を除いた予測値
+            y_pred = X_train @ coef
+            residual = y_train - y_pred + coef[j] * X_train[:, j]
 
-# ===== Lasso回帰の学習（座標降下法） =====
-print("学習開始")
-for iteration in range(max_iter):
-    coef_old = coef.copy()
+            # rhoの計算（残差とj番目の特徴量の内積）
+            rho = X_train[:, j] @ residual / n_samples
+            lambda_val = alpha / n_samples
+            if (rho < -lambda_val).values():
+                coef[j] = rho + lambda_val
+            elif (rho > lambda_val).values():
+                coef[j] = rho - lambda_val
+            else:
+                coef[j] = 0.0
+        # 収束判定
+        if (si.sum(si.abs(coef - coef_old)) < tol).values():
+            print(f"収束（iter: {iteration + 1}）")
+            break
+    
+    # 選ばれた特徴量のインデックス
+    selected_features = []
+    for i in range(n_features):
+        if coef[i].values() != 0:
+            selected_features.append(i)
 
-    # 各特徴量について順番に最適化
-    for j in range(n_features):
-        # j番目の特徴量を除いた予測値
-        y_pred = X_train @ coef
-        residual = y_train - y_pred + coef[j] * X_train[:, j]
+    # 選ばれた特徴のインデックスで最初のものを使って推論
+    idx = selected_features[0]
+    eta = (X_train.T @ X_train).inv() @ X_train.T
+    return eta[idx]
 
-        # rhoの計算（残差とj番目の特徴量の内積）
-        rho = X_train[:, j] @ residual / n_samples
 
-        # ソフト閾値を適用してj番目の係数を更新
-        lambda_val = alpha / n_samples
-        # if rho < -lambda_val:
-        #     coef[j] = rho + lambda_val
-        # elif rho > lambda_val:
-        #     coef[j] = rho - lambda_val
-        # else:
-        #     coef[j] = 0.0
-        
-        coef[j] = si.where(rho < -lambda_val, rho + lambda_val, 0) 
-        coef[j] += si.where(rho > lambda_val, rho - lambda_val, 0)
-        
+if __name__ == "__main__":
+    np.random.seed(42)
+    rng = np.random.default_rng(0)
+    n_samples = 100
+    n_features = 20
 
-    # 収束判定
-    if np.sum(np.abs(coef - coef_old)) < tol:
-        print(f"収束（反復回数: {iteration + 1}）")
-        break
+    beta = np.zeros(n_features)
+    X = np.random.randn(n_samples, n_features)
+    y = X @ beta + rng.normal(0, 1, n_samples)
 
-# ===== 結果の表示 =====
-print(f"{coef=}")
+    y = si.siarray(y)
+    X = si.siarray(X)
 
-# 選ばれた特徴量のインデックス
-selected_features = np.where(coef != 0)[0]
-print(f"選ばれた特徴量のインデックス: {selected_features}")
+    # 訓練データとテストデータに分割
+    split_idx = int(0.8 * n_samples)
+    X_train = X[:split_idx]
+    X_test = X[split_idx:]
+    y_train = y[:split_idx]
+    y_test = y[split_idx:]
 
-# 選ばれた特徴のインデックスで最初のものを使って推論
-eta = (X_train.T @ X_train).inv() @ X_train.T
-idx = selected_features[0]
-result = si.inference(eta=eta[idx], prob_vec=y_train, var=1.0, model=idx)
-print(f"特徴量 {idx} のp値: {result.p_value}")
+    eta = lasso(y_train)
+
+    result = si.inference(eta=eta, prob_vec=y_train, var=1.0, algorithm=lasso)
+    print(f"p-value: {result.p_value}")

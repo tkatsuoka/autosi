@@ -1,12 +1,12 @@
 from .inf import inference
-from .utils import siarray, abs, argsort, where, trace_graph, show_graph
+from .utils import abs, sum, argsort, show_graph, siarray, trace_graph
 
 __all__ = [
     "inference",
     "siarray",
     "argsort",
     "abs",
-    "where",
+    "sum",
     "trace_graph",
     "show_graph",
 ]
