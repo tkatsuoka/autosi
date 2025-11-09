@@ -30,7 +30,7 @@ print(result.p_value)
 
 p_values = []
 
-for i in range(1000):
+for i in range(10000):
     beta = np.zeros(10)
     X = rng.normal(0, 1, (200, 10))
     y = X @ beta + rng.normal(0, 1, 200)

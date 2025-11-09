@@ -53,14 +53,16 @@ class siarray:
     def _dispatch_operation(self, other, op_name):
         """演算をRationalFunctionまたはsiarrayで処理"""
         if isinstance(other, RationalFunction):
-            # siarrayをRationalFunctionに変換してから演算
             self_rf = RationalFunction(
                 numerator=[self.data],
                 denominator=[np.ones_like(self.data)],
-                z=None,
             )
             return getattr(self_rf, op_name)(other)
         return None
+
+    def data(self):
+        """内部のNumPy配列を返す"""
+        return self.data
 
     # ------------------------------------------------------------------------
     # 算術演算子
@@ -258,7 +260,7 @@ class siarray:
             key = key.coef_num[0]
         elif isinstance(key, siarray):
             key = key.data
-        
+
         result_data = self.data[key]
         result = siarray.__new__(siarray)
         result.data = result_data
@@ -266,10 +268,26 @@ class siarray:
         return result
 
     def __setitem__(self, key, value):
-        """要素の設定（破壊的操作）"""
-        value_siarray = value if isinstance(value, siarray) else siarray.constant(value)
-        self.data[key] = value_siarray.data
-        self.name = f"{self.name}[{key}]=updated"
+        if isinstance(key, RationalFunction):
+            key = key.coef_num[0]
+        elif isinstance(key, siarray):
+            key = key.data
+
+        if isinstance(value, RationalFunction):
+            self_rf = RationalFunction(
+                numerator=[self.data],
+                denominator=[np.ones_like(self.data)],
+            )
+            # RationalFunctionのまま代入
+            self_rf[key] = value
+        elif isinstance(value, siarray):
+            value_siarray = value
+            self.data[key] = value_siarray.data
+            self.name = f"{self.name}[{key}]=updated"
+        else:
+            value_siarray = siarray.constant(value)
+            self.data[key] = value_siarray.data
+            self.name = f"{self.name}[{key}]=updated"
 
     # ------------------------------------------------------------------------
     # 配列操作メソッド
@@ -420,6 +438,7 @@ class siarray:
         # intervalsをリセット
         tracker = IntervalTracker.get_instance()
         tracker.reset()
+        tracker.set_z(z)
 
         # 通常の値で実行してモデルを取得
         prob_vec = a + b * z
@@ -429,7 +448,6 @@ class siarray:
         prob_vec_rf = RationalFunction(
             numerator=[a, b],
             denominator=[np.ones_like(a)],
-            z=z,
         )
 
         # RationalFunctionでラップした環境でアルゴリズム実行

@@ -1,6 +1,7 @@
 import numpy as np
 from sicore import RealSubset, polynomial_iso_sign_interval
 
+
 class IntervalTracker:
     """グローバルなintervals管理用のシングルトンクラス"""
 
@@ -40,20 +41,17 @@ class IntervalTracker:
         else:
             self._intervals = self._intervals & new_intervals
         return self._intervals
-    
+
     def get_state(self):
         """現在の状態（intervalsとz）を取得"""
-        return {
-            'intervals': self._intervals,
-            'z': self._z
-        }
+        return {"intervals": self._intervals, "z": self._z}
+
 
 class RationalFunction:
     def __init__(
         self,
         numerator: list[np.ndarray],
         denominator: list[np.ndarray] | None,
-        z: float | None = None,
     ):
         self.coef_num = list(numerator)
         self.coef_den = (
@@ -61,24 +59,22 @@ class RationalFunction:
             if denominator is not None
             else [np.ones_like(self.coef_num[0])]
         )
-        self.z = z
         self.shape = numerator[0].shape
 
     def _to_rational_function(self, other):
         from .utils import siarray
+
         if isinstance(other, RationalFunction):
             return other
         elif isinstance(other, siarray):
             return RationalFunction(
                 numerator=[other.data],
                 denominator=[np.ones_like(other.data)],
-                z=None,
             )
         else:
             return RationalFunction(
                 numerator=[np.array(other)],
                 denominator=[np.ones_like(np.array(other))],
-                z=None,
             )
 
     @staticmethod
@@ -106,40 +102,122 @@ class RationalFunction:
         num2 = self._poly_mul(other.coef_num, self.coef_den)
         new_coef_num = self._poly_add(num1, num2)
         new_coef_den = self._poly_mul(self.coef_den, other.coef_den)
-        return RationalFunction(new_coef_num, new_coef_den, self.z)
+        return RationalFunction(new_coef_num, new_coef_den)
 
     def __sub__(self, other: "RationalFunction") -> "RationalFunction":
         other = self._to_rational_function(other)
         num1 = self._poly_mul(self.coef_num, other.coef_den)
         num2 = self._poly_mul(other.coef_num, self.coef_den)
-        new_coef_num = [a - b for a, b in zip(num1, num2)]
+        # _poly_addを使って次元の違いに対応
+        neg_num2 = [-c for c in num2]
+        new_coef_num = self._poly_add(num1, neg_num2)
         new_coef_den = self._poly_mul(self.coef_den, other.coef_den)
-        return RationalFunction(new_coef_num, new_coef_den, self.z)
-
-    def __mul__(self, other: "RationalFunction") -> "RationalFunction":
-        other = self._to_rational_function(other)
-        new_coef_num = self._poly_mul(self.coef_num, other.coef_num)
-        new_coef_den = self._poly_mul(self.coef_den, other.coef_den)
-        return RationalFunction(new_coef_num, new_coef_den, self.z)
+        return RationalFunction(new_coef_num, new_coef_den)
 
     def __truediv__(self, other: "RationalFunction") -> "RationalFunction":
         other = self._to_rational_function(other)
         new_coef_num = self._poly_mul(self.coef_num, other.coef_den)
         new_coef_den = self._poly_mul(self.coef_den, other.coef_num)
-        return RationalFunction(new_coef_num, new_coef_den, self.z)
+        return RationalFunction(new_coef_num, new_coef_den)
+
+    def __mul__(self, other: "RationalFunction") -> "RationalFunction":
+        other = self._to_rational_function(other)
+        new_coef_num = self._poly_mul(self.coef_num, other.coef_num)
+        new_coef_den = self._poly_mul(self.coef_den, other.coef_den)
+        return RationalFunction(new_coef_num, new_coef_den)
 
     def __matmul__(self, other: "RationalFunction") -> "RationalFunction":
         other = self._to_rational_function(other)
-        new_coef_num = [c1 @ c2 for c1 in self.coef_num for c2 in other.coef_num]
-        new_coef_den = [c1 @ c2 for c1 in self.coef_den for c2 in other.coef_den]
-        return RationalFunction(new_coef_num, new_coef_den, self.z)
+
+        # selfとotherの形状を正規化（1次元を2次元として扱う）
+        if len(self.shape) == 1:
+            self_rows = 1
+            self_cols = self.shape[0]
+            self_is_vector = True
+        else:
+            self_rows = self.shape[0]
+            self_cols = self.shape[1]
+            self_is_vector = False
+
+        if len(other.shape) == 1:
+            other_cols = 1
+            other_is_vector = True
+        else:
+            other_cols = other.shape[1]
+            other_is_vector = False
+
+        # 結果の行列を初期化
+        output = RationalFunction(
+            numerator=[np.zeros((self_rows, other_cols))],
+            denominator=[np.ones((self_rows, other_cols))],
+        )
+
+        for i in range(self_rows):
+            for j in range(other_cols):
+                sum_ = RationalFunction(
+                    numerator=[np.zeros((1,))],
+                    denominator=[np.ones((1,))],
+                )
+                for k in range(self_cols):
+                    # selfの要素取得
+                    if self_is_vector:
+                        self_elem = self[k]
+                    else:
+                        self_elem = self[i, k]
+
+                    # otherの要素取得
+                    if other_is_vector:
+                        other_elem = other[k]
+                    else:
+                        other_elem = other[k, j]
+
+                    sum_ = sum_ + (self_elem * other_elem)
+                output[i, j] = sum_
+
+        # 結果の形状を調整
+        if self_is_vector and other_is_vector:
+            # ベクトル @ ベクトル → スカラー
+            output.shape = (1,)
+            output.coef_num = [c.flatten() for c in output.coef_num]
+            output.coef_den = [c.flatten() for c in output.coef_den]
+        elif other_is_vector:
+            # 行列 @ ベクトル → ベクトル
+            output.shape = (self_rows,)
+            output.coef_num = [c.flatten() for c in output.coef_num]
+            output.coef_den = [c.flatten() for c in output.coef_den]
+        elif self_is_vector:
+            # ベクトル @ 行列 → ベクトル
+            output.shape = (other_cols,)
+            output.coef_num = [c.flatten() for c in output.coef_num]
+            output.coef_den = [c.flatten() for c in output.coef_den]
+
+        return output
 
     def __getitem__(self, key) -> "RationalFunction":
         return RationalFunction(
             [c[key] for c in self.coef_num],
             [c[key] for c in self.coef_den],
-            self.z,
         )
+
+    def __setitem__(self, key, value):
+        """要素の設定（破壊的操作）"""
+        if isinstance(value, RationalFunction):
+            value_rf = value
+        else:
+            from .utils import siarray
+
+            value_siarray = (
+                value if isinstance(value, siarray) else siarray.constant(value)
+            )
+            value_rf = RationalFunction(
+                numerator=[value_siarray.data],
+                denominator=[np.ones_like(value_siarray.data)],
+                z=None,
+            )
+        for i in range(len(self.coef_num)):
+            self.coef_num[i][key] = value_rf.coef_num[i]
+        for i in range(len(self.coef_den)):
+            self.coef_den[i][key] = value_rf.coef_den[i]
 
     def __lt__(self, other: "RationalFunction") -> "RationalFunction":
         """self < other を計算し、制約をグローバルintervalsに追加"""
@@ -150,15 +228,17 @@ class RationalFunction:
             [-c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num]
         )
         den = np.array([c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den])
-        new_intervals = calc_polynominal_interval(neg_num, den, self.z, threshold=0.0)
+        z = IntervalTracker.get_instance().get_z()
+        new_intervals = calc_polynominal_interval(neg_num, den, z, threshold=0.0)
+
+        # print("debug lt(<) intervals:", new_intervals)
 
         IntervalTracker.get_instance().update(new_intervals)
 
-        result_value = diff.output() < 0
+        result_value = diff.data < 0
         return RationalFunction(
             [result_value.astype(float)],
             [np.ones_like(result_value, dtype=float)],
-            self.z,
         )
 
     def __le__(self, other: "RationalFunction") -> "RationalFunction":
@@ -169,15 +249,14 @@ class RationalFunction:
             [-c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num]
         )
         den = np.array([c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den])
-        new_intervals = calc_polynominal_interval(neg_num, den, self.z, threshold=0.0)
-
+        z = IntervalTracker.get_instance().get_z()
+        new_intervals = calc_polynominal_interval(neg_num, den, z, threshold=0.0)
         IntervalTracker.get_instance().update(new_intervals)
 
-        result_value = diff.output() <= 0
+        result_value = diff.data <= 0
         return RationalFunction(
             [result_value.astype(float)],
             [np.ones_like(result_value, dtype=float)],
-            self.z,
         )
 
     def __gt__(self, other: "RationalFunction") -> "RationalFunction":
@@ -186,15 +265,17 @@ class RationalFunction:
         diff = self - other
         num = np.array([c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num])
         den = np.array([c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den])
-        new_intervals = calc_polynominal_interval(num, den, self.z, threshold=0.0)
+        z = IntervalTracker.get_instance().get_z()
+        new_intervals = calc_polynominal_interval(num, den, z, threshold=0.0)
+
+        # print("debug gt(>) intervals:", new_intervals)
 
         IntervalTracker.get_instance().update(new_intervals)
 
-        result_value = diff.output() > 0
+        result_value = diff.data > 0
         return RationalFunction(
             [result_value.astype(float)],
             [np.ones_like(result_value, dtype=float)],
-            self.z,
         )
 
     def __ge__(self, other: "RationalFunction") -> "RationalFunction":
@@ -203,31 +284,31 @@ class RationalFunction:
         diff = self - other
         num = np.array([c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num])
         den = np.array([c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den])
-        new_intervals = calc_polynominal_interval(num, den, self.z, threshold=0.0)
+        z = IntervalTracker.get_instance().get_z()
+        new_intervals = calc_polynominal_interval(num, den, threshold=0.0)
 
         IntervalTracker.get_instance().update(new_intervals)
 
-        result_value = diff.data() >= 0
+        result_value = diff.data >= 0
         return RationalFunction(
             [result_value.astype(float)],
             [np.ones_like(result_value, dtype=float)],
-            self.z,
         )
 
     def T(self) -> "RationalFunction":
         new_coef_num = [c.T for c in self.coef_num]
         new_coef_den = [c.T for c in self.coef_den]
-        return RationalFunction(new_coef_num, new_coef_den, self.z)
+        return RationalFunction(new_coef_num, new_coef_den)
 
     def inv(self) -> "RationalFunction":
         new_coef_num = [np.linalg.inv(c) for c in self.coef_num]
-        return RationalFunction(new_coef_num, self.coef_den, self.z)
+        return RationalFunction(new_coef_num, self.coef_den)
 
     def abs(self) -> "RationalFunction":
-        z = self.z
+        z = IntervalTracker.get_instance().get_z()
         tracker = IntervalTracker.get_instance()
-        positive_idx = (self.data() >= 0).view(bool)
-        negative_idx = (self.data() < 0).view(bool)
+        positive_idx = (self.data >= 0).view(bool)
+        negative_idx = (self.data < 0).view(bool)
 
         new_coef_num = [
             self.coef_num[i] * positive_idx + (-self.coef_num[i]) * negative_idx
@@ -280,10 +361,10 @@ class RationalFunction:
                 neg_intervals = calc_polynominal_interval(_num, _den, z)
                 print("debug neg_intervals:", neg_intervals)
                 tracker.update(neg_intervals)
-        return RationalFunction(new_coef_num, new_coef_den, self.z)
+        return RationalFunction(new_coef_num, new_coef_den)
 
     def argsort(self, axis=-1, kind=None, order=None) -> "RationalFunction":
-        output = self.output()
+        output = self.data
         sorted_idx = np.argsort(output, axis=axis, kind=kind, order=order)
         tracker = IntervalTracker.get_instance()
         for i in range(len(sorted_idx) - 1):
@@ -291,29 +372,28 @@ class RationalFunction:
             next_idx = sorted_idx[i + 1]
             inequality = self[idx] - self[next_idx]
             _intervals = calc_polynominal_interval(
-                np.array(inequality.coef_num), np.array(inequality.coef_den), self.z
+                np.array(inequality.coef_num),
+                np.array(inequality.coef_den),
+                z=tracker.get_z(),
             )
             print("debug argsort intervals:", _intervals)
             tracker.update(_intervals)
         coef_num = [np.array(sorted_idx)]
         coef_den = [np.ones_like(sorted_idx)]
-        return RationalFunction(coef_num, coef_den, self.z)
+        return RationalFunction(coef_num, coef_den)
 
     def copy(self):
         """RationalFunctionのコピーを作成"""
         return RationalFunction(
             [c.copy() for c in self.coef_num],
             [c.copy() for c in self.coef_den],
-            self.z,
         )
 
+    @property
     def data(self) -> np.ndarray:
-        coef_num_val = sum(
-            self.coef_num[i] * (self.z**i) for i in range(len(self.coef_num))
-        )
-        coef_den_val = sum(
-            self.coef_den[i] * (self.z**i) for i in range(len(self.coef_den))
-        )
+        z = IntervalTracker.get_instance().get_z()
+        coef_num_val = sum(self.coef_num[i] * (z**i) for i in range(len(self.coef_num)))
+        coef_den_val = sum(self.coef_den[i] * (z**i) for i in range(len(self.coef_den)))
         return (coef_num_val / coef_den_val).reshape(self.shape)
 
 
