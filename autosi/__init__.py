@@ -1,6 +1,6 @@
 from .inf import inference
 from .utils import abs, sum, argsort, siarray
-from .rationalfunc import RationalFunction
+from .rationalfunc import RationalFunction, IntervalTracker
 
 __all__ = [
     "inference",
@@ -9,4 +9,5 @@ __all__ = [
     "abs",
     "sum",
     "RationalFunction",
+    "IntervalTracker",
 ]

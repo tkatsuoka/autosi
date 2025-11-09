@@ -51,7 +51,7 @@ class RationalFunction:
     def __init__(
         self,
         numerator: list[np.ndarray],
-        denominator: list[np.ndarray] | None,
+        denominator: list[np.ndarray] | None = None,
     ):
         self.coef_num = list(numerator)
         self.coef_den = (

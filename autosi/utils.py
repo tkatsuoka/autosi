@@ -19,12 +19,10 @@ class siarray:
         """
         if isinstance(X, siarray):
             self.data = X.data
-            self.name = name or X.name
         else:
             if not isinstance(X, np.ndarray):
                 X = np.array(X)
             self.data = X
-            self.name = name or f"input_{id(X)}"
 
     # ------------------------------------------------------------------------
     # ファクトリメソッド
@@ -37,7 +35,6 @@ class siarray:
             value = np.array(value)
         obj = cls.__new__(cls)
         obj.data = value
-        obj.name = f"const_{id(value)}"
         return obj
 
     # ------------------------------------------------------------------------
@@ -77,7 +74,6 @@ class siarray:
         result_data = self.data + other.data
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"({self.name}+{other.name})"
         return result
 
     def __radd__(self, other):
@@ -95,7 +91,6 @@ class siarray:
         result_data = self.data - other.data
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"({self.name}-{other.name})"
         return result
 
     def __rsub__(self, other):
@@ -112,7 +107,6 @@ class siarray:
         result_data = self.data * other.data
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"({self.name}*{other.name})"
         return result
 
     def __rmul__(self, other):
@@ -130,7 +124,6 @@ class siarray:
         result_data = self.data / other.data
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"({self.name}/{other.name})"
         return result
 
     def __rtruediv__(self, other):
@@ -147,7 +140,6 @@ class siarray:
         result_data = self.data @ other.data
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"({self.name}@{other.name})"
         return result
 
     def __rmatmul__(self, other):
@@ -160,14 +152,12 @@ class siarray:
         result_data = -self.data
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"(-{self.name})"
         return result
 
     def __abs__(self):
         result_data = np.abs(self.data)
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"abs({self.name})"
         return result
 
     def __pow__(self, power):
@@ -179,7 +169,6 @@ class siarray:
         result_data = self.data**power_val
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"({self.name}**{power_val})"
         return result
 
     # ------------------------------------------------------------------------
@@ -195,7 +184,6 @@ class siarray:
         result_data = self.data < other.data
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"({self.name}<{other.name})"
         return result
 
     def __le__(self, other):
@@ -207,7 +195,6 @@ class siarray:
         result_data = self.data <= other.data
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"({self.name}<={other.name})"
         return result
 
     def __gt__(self, other):
@@ -219,7 +206,6 @@ class siarray:
         result_data = self.data > other.data
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"({self.name}>{other.name})"
         return result
 
     def __ge__(self, other):
@@ -231,7 +217,6 @@ class siarray:
         result_data = self.data >= other.data
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"({self.name}>={other.name})"
         return result
 
     def __eq__(self, other):
@@ -239,7 +224,6 @@ class siarray:
         result_data = np.equal(self.data, other.data)
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"({self.name}=={other.name})"
         return result
 
     def __ne__(self, other):
@@ -247,7 +231,6 @@ class siarray:
         result_data = np.not_equal(self.data, other.data)
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"({self.name}!={other.name})"
         return result
 
     # ------------------------------------------------------------------------
@@ -261,10 +244,9 @@ class siarray:
         elif isinstance(key, siarray):
             key = key.data
 
-        result_data = self.data[key]
+        result_data = self.data[key].copy()
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"{self.name}[{key}]"
         return result
 
     def __setitem__(self, key, value):
@@ -275,19 +257,18 @@ class siarray:
 
         if isinstance(value, RationalFunction):
             self_rf = RationalFunction(
-                numerator=[self.data],
+                numerator=[self.data.copy()],
                 denominator=[np.ones_like(self.data)],
             )
-            # RationalFunctionのまま代入
-            self_rf[key] = value
+            # RationalFunctionの__setitem__を呼び出す
+            self_rf.__setitem__(key, value)
+
         elif isinstance(value, siarray):
             value_siarray = value
-            self.data[key] = value_siarray.data
-            self.name = f"{self.name}[{key}]=updated"
+            self.data[key] = value_siarray.data.copy()
         else:
             value_siarray = siarray.constant(value)
-            self.data[key] = value_siarray.data
-            self.name = f"{self.name}[{key}]=updated"
+            self.data[key] = value_siarray.data.copy()
 
     # ------------------------------------------------------------------------
     # 配列操作メソッド
@@ -299,7 +280,6 @@ class siarray:
         result_data = self.data.T
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"{self.name}.T"
         return result
 
     def transpose(self, *axes):
@@ -311,7 +291,6 @@ class siarray:
 
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"{self.name}.transpose({axes})"
         return result
 
     def inv(self):
@@ -319,7 +298,6 @@ class siarray:
         result_data = np.linalg.inv(self.data)
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"{self.name}.inv()"
         return result
 
     def reshape(self, *shape):
@@ -330,7 +308,6 @@ class siarray:
         result_data = self.data.reshape(shape)
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"{self.name}.reshape({shape})"
         return result
 
     def argsort(self, axis=-1, kind=None, order=None):
@@ -338,14 +315,12 @@ class siarray:
         result_data = np.argsort(self.data, axis=axis, kind=kind, order=order)
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"{self.name}.argsort(axis={axis})"
         return result
 
     def copy(self):
         """siarrayオブジェクトのコピーを作成"""
         copied = siarray.__new__(siarray)
         copied.data = self.data.copy()
-        copied.name = self.name
         return copied
 
     # ------------------------------------------------------------------------
@@ -367,7 +342,6 @@ class siarray:
         result_data = np.sum(self.data, axis=axis, dtype=dtype, keepdims=keepdims)
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"{self.name}.sum(axis={axis})"
         return result
 
     def mean(self, axis=None, keepdims=False):
@@ -375,7 +349,6 @@ class siarray:
         result_data = np.mean(self.data, axis=axis, keepdims=keepdims)
         result = siarray.__new__(siarray)
         result.data = result_data
-        result.name = f"{self.name}.mean(axis={axis})"
         return result
 
     # ------------------------------------------------------------------------
@@ -494,7 +467,7 @@ class siarray:
         return self.data
 
     def __repr__(self):
-        return f"siarray({self.name}, shape={self.data.shape})"
+        return f"shape={self.data.shape})"
 
 
 # ============================================================================
