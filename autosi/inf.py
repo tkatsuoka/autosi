@@ -27,7 +27,7 @@ def inference(
     si_calculator = SelectiveInferenceNorm(prob_vec, var, eta_vec)
 
     result = si_calculator.inference(
-        algorithm=eta.calc_intervals,  # (a, b, z) -> eta, l, u
+        algorithm=eta.forward_si,  # (a, b, z) -> eta, l, u
         model_selector=eta.model_selector,
         **kwargs,
     )

@@ -1,25 +1,20 @@
 import os
 import sys
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import numpy as np
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import autosi as si
 
 # ===== データの生成 =====
 
-
 def lasso(y):
-    # ===== ハイパーパラメータの設定 =====
-    alpha = 0.1  # L1正則化パラメータ
-    max_iter = 1000  # 最大反復回数
-    tol = 1e-4  # 収束判定の閾値（siarrayにしない）
+    alpha = si.array(0.1)  # L1正則化パラメータ
+    max_iter = si.array(1000)  # 最大反復回数
+    tol = si.array(1e-4)  # 収束判定の閾値
+    coef = si.array(np.zeros(n_features))
 
-    # ===== 係数の初期化 =====
-    coef = si.siarray(np.zeros(n_features))
-
-    # ===== Lasso回帰の学習（座標降下法） =====
     for iteration in range(max_iter):
         coef_old = coef.copy()
 
@@ -27,40 +22,38 @@ def lasso(y):
         for j in range(n_features):
             # j番目の特徴量を除いた予測値
             y_pred = X_train @ coef
-
+            
             residual = y - y_pred + coef[j] * X_train[:, j]
+            # print(residual.coef_den)
             # rhoの計算（残差とj番目の特徴量の内積）
             rho = X_train[:, j] @ residual / n_samples
-            # print("debug rho:", rho.data)
-            
+            print(rho.coef_num)
+            # print(X_train[:, j].coef_num)
+            # print(len(rho.coef_num))
             lambda_val = alpha / n_samples
-            
-            # 比較結果の.dataを使う
-            if (rho < -lambda_val).data:
-                print("1")
+
+            if rho < -lambda_val:
+                # print("1")
                 coef[j] = rho + lambda_val
-                print(rho.data)
-                print(coef[j].data)
-            elif (rho > lambda_val).data:
-                print("2")
+                # print(rho + lambda_val)
+                # print(coef[j])
+            elif rho > lambda_val:
+                # print("2")
                 coef[j] = rho - lambda_val
+                # print(rho - lambda_val)
+                # print(coef[j])
             else:
-                print("3")
+                # print("3")
                 coef[j] = 0.0
-            # if isinstance(coef, si.RationalFunction):
-            #     print("debug coef:", coef)
-            #     print(coef.coef_num)
-            # else:
-            #     print("debug coef:", coef.data)
-        
+                # print(coef[j])
+
         # 収束判定
         diff = si.sum(si.abs(coef - coef_old))
-        if (diff < tol).data:
+        if diff < tol:
             print(f"収束（iter: {iteration + 1}）")
             break
-    
-    # 選ばれた特徴量のインデックス
-    idx = si.argsort(si.abs(coef))[ -1]
+
+    idx = si.argsort(si.abs(coef))[-1]
     eta = (X_train.T @ X_train).inv() @ X_train.T
     return eta[idx]
 
@@ -75,8 +68,8 @@ if __name__ == "__main__":
     X = np.random.randn(n_samples, n_features)
     y = X @ beta + rng.normal(0, 1, n_samples)
 
-    y = si.siarray(y)
-    X = si.siarray(X)
+    y = si.array(y)
+    X = si.array(X)
 
     # 訓練データとテストデータに分割
     split_idx = int(0.8 * n_samples)

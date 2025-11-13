@@ -23,14 +23,13 @@ def merginal_screening(y):
     return eta[idx]
 
 eta = merginal_screening(y)
-# print(eta.data)
 result = si.inference(eta=eta, prob_vec=y, var=1.0, algorithm=merginal_screening)
-print(result.p_value)
+print("p-value", result.p_value)
 
 
 p_values = []
 
-for i in range(10000):
+for i in range(1000):
     beta = np.zeros(10)
     X = rng.normal(0, 1, (200, 10))
     y = X @ beta + rng.normal(0, 1, 200)
