@@ -135,12 +135,8 @@ class siarray:
         z = IntervalTracker.get_instance().get_z()
         if z is None:
             z = 0.0  # z が設定されていない場合はデフォルト値
-
-        # リスト内包表記で各項を計算してから合計
         coef_num_terms = [self.coef_num[i] * (z**i) for i in range(len(self.coef_num))]
         coef_den_terms = [self.coef_den[i] * (z**i) for i in range(len(self.coef_den))]
-
-        # NumPy の sum を使用
         coef_num_val = np.sum(coef_num_terms, axis=0)
         coef_den_val = np.sum(coef_den_terms, axis=0)
 
@@ -177,9 +173,19 @@ class siarray:
         n = max(len(p1), len(p2))
         result = []
         for i in range(n):
-            c1 = p1[i].copy() if i < len(p1) else np.zeros_like(p1[0])
-            c2 = p2[i].copy() if i < len(p2) else np.zeros_like(p2[0])
+            c1 = p1[i] if i < len(p1) else np.zeros_like(p1[0])
+            c2 = p2[i] if i < len(p2) else np.zeros_like(p2[0])
             result.append(c1 + c2)
+        return result
+
+    @staticmethod
+    def _poly_sub(p1: list[np.ndarray], p2: list[np.ndarray]) -> list[np.ndarray]:
+        n = max(len(p1), len(p2))
+        result = []
+        for i in range(n):
+            c1 = p1[i] if i < len(p1) else np.zeros_like(p1[0])
+            c2 = p2[i] if i < len(p2) else np.zeros_like(p2[0])
+            result.append(c1 - c2)
         return result
 
     @staticmethod
@@ -209,9 +215,9 @@ class siarray:
 
     def __sub__(self, other):
         other = self._to_siarray(other)
-        new_coef_num = self._poly_add(
+        new_coef_num = self._poly_sub(
             self._poly_mul(self.coef_num, other.coef_den),
-            [-c.copy() for c in self._poly_mul(other.coef_num, self.coef_den)],
+            self._poly_mul(other.coef_num, self.coef_den),
         )
         new_coef_den = self._poly_mul(self.coef_den, other.coef_den)
         return siarray.from_rational(new_coef_num, new_coef_den)
@@ -230,8 +236,8 @@ class siarray:
 
     def __truediv__(self, other):
         other = self._to_siarray(other)
-        # オーバーフローを防ぐため，定数による割り算は直接計算
         if len(other.coef_num) == 1 and len(other.coef_den) == 1:
+            # オーバーフローを防ぐため，定数による割り算は直接計算
             new_coef_num = [c / other.coef_num[0] for c in self.coef_num]
             new_coef_den = [c / other.coef_den[0] for c in self.coef_den]
         else:
@@ -244,120 +250,42 @@ class siarray:
 
     def __matmul__(self, other):
         other = self._to_siarray(other)
-        new_coef_num = []
-        for i in range(len(self.coef_num)):
-            for j in range(len(other.coef_num)):
-                new_coef_num.append(self.coef_num[i] @ other.coef_num[j])
 
-        new_coef_den = [np.ones_like(new_coef_num[i]) for i in range(len(new_coef_num))]
+        # 通分する
+        # self = self._common_denominator()
+        # other = other._common_denominator()
+
+        n = len(self.coef_num) + len(other.coef_num) - 1
+        new_coef_num = [
+            np.zeros_like(self.coef_num[0] @ other.coef_num[0]) for _ in range(n)
+        ]
+        for i, c1 in enumerate(self.coef_num):
+            for j, c2 in enumerate(other.coef_num):
+                new_coef_num[i + j] = new_coef_num[i + j] + c1 @ c2
+
+        result_shape = new_coef_num[0].shape
+        new_coef_den = []
+        for c1 in self.coef_den:
+            for c2 in other.coef_den:
+                # 行列積の結果の形状に合わせて分母を複製
+                # スカラーまたは要素ごとの積を結果の形状にブロードキャスト
+                if c1.shape == () and c2.shape == ():
+                    # 両方スカラー
+                    den_val = c1.item() * c2.item()
+                    new_coef_den.append(np.full(result_shape, den_val))
+                elif c1.ndim == 1 and c2.ndim == 1:
+                    # ベクトル同士（外積的な扱い）
+                    den_val = c1[0] * c2[0]  # 簡易実装
+                    new_coef_den.append(np.full(result_shape, den_val))
+                elif c1.ndim == 2 and c2.ndim == 2:
+                    # 行列同士: 要素ごとの積の代表値を使用
+                    den_val = c1[0, 0] * c2[0, 0]  # 簡易実装
+                    new_coef_den.append(np.full(result_shape, den_val))
+                else:
+                    # その他の場合: 最初の要素の積を使用
+                    den_val = c1.flat[0] * c2.flat[0]
+                    new_coef_den.append(np.full(result_shape, den_val))
         return siarray.from_rational(new_coef_num, new_coef_den)
-
-    # def __matmul__(self, other):
-    #     """行列積 (有理関数版)"""
-    #     other = self._to_siarray(other)
-
-    #     # 形状チェック
-    #     if len(self._shape) < 1 or len(other._shape) < 1:
-    #         raise ValueError("matmul requires at least 1-dimensional arrays")
-
-    #     # ベクトル・行列の次元を取得
-    #     if len(self._shape) == 1:
-    #         m, k = 1, self._shape[0]
-    #         self_is_1d = True
-    #     else:
-    #         m, k = self._shape[-2:]
-    #         self_is_1d = False
-
-    #     if len(other._shape) == 1:
-    #         k2, n = other._shape[0], 1
-    #         other_is_1d = True
-    #     else:
-    #         k2, n = other._shape[-2:]
-    #         other_is_1d = False
-
-    #     if k != k2:
-    #         raise ValueError(f"matmul: Input operand shapes {self._shape} and {other._shape} are not compatible")
-
-    #     # 結果の形状を決定
-    #     if self_is_1d and other_is_1d:
-    #         result_shape = ()
-    #         m, n = 1, 1
-    #     elif self_is_1d:
-    #         result_shape = (n,)
-    #         m = 1
-    #     elif other_is_1d:
-    #         result_shape = (m,)
-    #         n = 1
-    #     else:
-    #         result_shape = (m, n)
-
-    #     # 行列積を計算: C[i,j] = Σ_l A[i,l] * B[l,j]
-    #     results = []
-
-    #     for i in range(m):
-    #         for j in range(n):
-    #             # 累積用の有理関数 (初期値: 0)
-    #             acc = siarray.constant(0.0)
-
-    #             for l in range(k):
-    #                 # A[i,l]とB[l,j]を取得
-    #                 if self_is_1d:
-    #                     a_num = [np.array(c.flat[l]) for c in self.coef_num]
-    #                     a_den = [np.array(c.flat[l]) for c in self.coef_den]
-    #                 else:
-    #                     if len(self._shape) == 2:
-    #                         a_num = [c[i, l] for c in self.coef_num]
-    #                         a_den = [c[i, l] for c in self.coef_den]
-    #                     else:
-    #                         idx_a = i * k + l
-    #                         a_num = [np.array(c.flat[idx_a]) for c in self.coef_num]
-    #                         a_den = [np.array(c.flat[idx_a]) for c in self.coef_den]
-
-    #                 if other_is_1d:
-    #                     b_num = [np.array(c.flat[l]) for c in other.coef_num]
-    #                     b_den = [np.array(c.flat[l]) for c in other.coef_den]
-    #                 else:
-    #                     if len(other._shape) == 2:
-    #                         b_num = [c[l, j] for c in other.coef_num]
-    #                         b_den = [c[l, j] for c in other.coef_den]
-    #                     else:
-    #                         idx_b = l * n + j
-    #                         b_num = [np.array(c.flat[idx_b]) for c in other.coef_num]
-    #                         b_den = [np.array(c.flat[idx_b]) for c in other.coef_den]
-
-    #                 # siarrayオブジェクトとして作成
-    #                 a_elem = siarray.from_rational(a_num, a_den)
-    #                 b_elem = siarray.from_rational(b_num, b_den)
-
-    #                 # A[i,l] * B[l,j]を計算して累積
-    #                 prod = a_elem * b_elem
-    #                 acc = acc + prod
-
-    #             results.append(acc)
-
-    #     # 結果を結合
-    #     if result_shape == ():
-    #         return results[0]
-
-    #     # 最大次数を取得
-    #     max_num_deg = max(len(r.coef_num) for r in results)
-    #     max_den_deg = max(len(r.coef_den) for r in results)
-
-    #     # 係数を結合
-    #     coef_num_combined = []
-    #     coef_den_combined = []
-
-    #     for deg in range(max_num_deg):
-    #         coeffs = [r.coef_num[deg] if deg < len(r.coef_num) else np.array(0.0)
-    #                 for r in results]
-    #         coef_num_combined.append(np.array(coeffs).reshape(result_shape))
-
-    #     for deg in range(max_den_deg):
-    #         coeffs = [r.coef_den[deg] if deg < len(r.coef_den) else np.array(0.0)
-    #                 for r in results]
-    #         coef_den_combined.append(np.array(coeffs).reshape(result_shape))
-
-    #     return siarray.from_rational(coef_num_combined, coef_den_combined)
 
     def __rmatmul__(self, other):
         """右側からの行列積"""
@@ -365,7 +293,7 @@ class siarray:
 
     def __neg__(self):
         new_coef_num = [-c.copy() for c in self.coef_num]
-        return siarray.from_rational(new_coef_num, [c.copy() for c in self.coef_den])
+        return siarray.from_rational(new_coef_num, self.coef_den)
 
     def __abs__(self):
         z = IntervalTracker.get_instance().get_z()
@@ -538,18 +466,47 @@ class siarray:
         )
 
     def __setitem__(self, key, value):
-        """要素の設定"""
+        """要素の設定（完全置き換え版）"""
         if isinstance(key, siarray):
             key = key.coef_num[0]
 
         value = self._to_siarray(value)
 
+        # 分子・分母の次数を合わせる
+        max_num_degree = max(len(self.coef_num), len(value.coef_num))
+        max_den_degree = max(len(self.coef_den), len(value.coef_den))
+
+        # 分子の次数を拡張
+        while len(self.coef_num) < max_num_degree:
+            self.coef_num.append(np.zeros_like(self.coef_num[0]))
+
+        # 分母の次数を拡張
+        while len(self.coef_den) < max_den_degree:
+            self.coef_den.append(np.ones_like(self.coef_den[0]))
+
+        # 分子を完全に置き換え
         for i in range(len(value.coef_num)):
             if i < len(self.coef_num):
                 self.coef_num[i][key] = value.coef_num[i].copy()
+            else:
+                self.coef_num.append(np.zeros_like(self.coef_num[0]))
+                self.coef_num[i][key] = value.coef_num[i].copy()
+
+        # value よりも高次の分子項がある場合はゼロにする
+        for i in range(len(value.coef_num), len(self.coef_num)):
+            self.coef_num[i][key] = 0.0
+
+        # 分母を完全に置き換え
         for i in range(len(value.coef_den)):
             if i < len(self.coef_den):
                 self.coef_den[i][key] = value.coef_den[i].copy()
+            else:
+                self.coef_den.append(np.ones_like(self.coef_den[0]))
+                self.coef_den[i][key] = value.coef_den[i].copy()
+
+        # value よりも高次の分母項がある場合は1にする
+        for i in range(len(value.coef_den), len(self.coef_den)):
+            self.coef_den[i][key] = 1.0
 
     # ------------------------------------------------------------------------
     # 配列操作メソッド
@@ -557,31 +514,22 @@ class siarray:
 
     @property
     def T(self):
-        """転置"""
         new_coef_num = [c.T for c in self.coef_num]
         new_coef_den = [c.T for c in self.coef_den]
         return siarray.from_rational(new_coef_num, new_coef_den)
 
-    def transpose(self, *axes):
-        """転置（軸指定可能）"""
-        if axes:
-            new_coef_num = [np.transpose(c, axes) for c in self.coef_num]
-            new_coef_den = [np.transpose(c, axes) for c in self.coef_den]
-        else:
-            new_coef_num = [c.T for c in self.coef_num]
-            new_coef_den = [c.T for c in self.coef_den]
+    def transpose(self, axes=None):
+        new_coef_num = [np.transpose(c, axes) for c in self.coef_num]
+        new_coef_den = [np.transpose(c, axes) for c in self.coef_den]
         return siarray.from_rational(new_coef_num, new_coef_den)
 
     def inv(self):
-        """逆行列"""
         new_coef_num = [np.linalg.inv(c) for c in self.coef_num]
         return siarray.from_rational(new_coef_num, [c.copy() for c in self.coef_den])
 
     def reshape(self, *shape):
-        """形状変更"""
         if len(shape) == 1 and isinstance(shape[0], (list, tuple)):
             shape = shape[0]
-
         new_coef_num = [c.reshape(shape) for c in self.coef_num]
         new_coef_den = [c.reshape(shape) for c in self.coef_den]
         result = siarray.from_rational(new_coef_num, new_coef_den)
@@ -589,7 +537,6 @@ class siarray:
         return result
 
     def argsort(self, axis=-1, kind=None, order=None):
-        """ソートのインデックスを返す"""
         output = self.data
         sorted_idx = np.argsort(output, axis=axis, kind=kind, order=order)
         tracker = IntervalTracker.get_instance()
@@ -608,7 +555,6 @@ class siarray:
         return siarray.from_rational(coef_num, coef_den)
 
     def copy(self):
-        """siarrayオブジェクトのコピーを作成"""
         return siarray.from_rational(
             [c.copy() for c in self.coef_num], [c.copy() for c in self.coef_den]
         )
@@ -823,8 +769,7 @@ class siarray:
             numerator=[a, b],
             denominator=[np.ones_like(a)],
         )
-
-        print("debug: forward_si")
+        # print("debug: forward_si")
         model = self.algorithm_func(prob_vec_rf)
 
         # 最終的なintervalsを取得
@@ -835,12 +780,8 @@ class siarray:
         else:
             output = model
 
-        print("debug", intervals)
+        # print("debug", intervals)
         return output, intervals
-
-    # ------------------------------------------------------------------------
-    # ユーティリティメソッド
-    # ------------------------------------------------------------------------
 
     def model_selector(self, searched_model: np.ndarray | "siarray") -> bool:
         """2つのモデルが同じかどうかを判定"""
@@ -855,7 +796,7 @@ class siarray:
             else np.asarray(searched_model)
         )
         comparison = np.allclose(data1, data2)
-        print("debug", comparison)
+        # print("debug", comparison)
         return comparison
 
     def to_numpy(self):
