@@ -248,12 +248,71 @@ class siarray:
     def __rtruediv__(self, other):
         return self._to_siarray(other).__truediv__(self)
 
+    def _common_denominator(self) -> "siarray":
+        """分母を共通化（通分）する。ユニークな分母のみの積を使用。"""
+        # 高速チェック: 各次数の係数配列が全要素同じか
+        d0 = [c.flat[0] for c in self.coef_den]
+        all_same = all(
+            np.allclose(c, d0[deg]) for deg, c in enumerate(self.coef_den)
+        )
+        if all_same:
+            return self
+        
+        flat_size = self.coef_num[0].size
+        
+        # 各要素がどのユニーク分母に属するかをマッピング
+        unique_dens = []
+        elem_to_unique = []
+        
+        for i in range(flat_size):
+            den = [c.flat[i] for c in self.coef_den]
+            found_idx = -1
+            for j, u in enumerate(unique_dens):
+                if len(u) == len(den) and all(np.isclose(u[k], den[k]) for k in range(len(den))):
+                    found_idx = j
+                    break
+            if found_idx == -1:
+                found_idx = len(unique_dens)
+                unique_dens.append(den)
+            elem_to_unique.append(found_idx)
+        
+        # 各ユニーク分母に対して「それ以外の積」を事前計算
+        n_unique = len(unique_dens)
+        multipliers = []
+        for i in range(n_unique):
+            mult = [np.array(1.0)]
+            for j in range(n_unique):
+                if i != j:
+                    mult = self._poly_mul(mult, unique_dens[j])
+            multipliers.append(mult)
+        
+        # 共通分母 = 全ユニーク分母の積
+        common_den = self._poly_mul(multipliers[0], unique_dens[0])
+        
+        # 各要素の分子を調整
+        max_deg = len(common_den)
+        new_num = [np.zeros(self._shape) for _ in range(max_deg)]
+        
+        for i in range(flat_size):
+            elem_num = [c.flat[i] for c in self.coef_num]
+            mult = multipliers[elem_to_unique[i]]
+            adjusted_num = self._poly_mul(elem_num, mult)
+            
+            idx = np.unravel_index(i, self._shape)
+            for deg, coef in enumerate(adjusted_num):
+                if deg < max_deg:
+                    new_num[deg][idx] = coef
+        
+        new_den = [np.full(self._shape, c) for c in common_den]
+        
+        return siarray.from_rational(new_num, new_den)
+
     def __matmul__(self, other):
         other = self._to_siarray(other)
 
         # 通分する
-        # self = self._common_denominator()
-        # other = other._common_denominator()
+        self = self._common_denominator()
+        other = other._common_denominator()
 
         n = len(self.coef_num) + len(other.coef_num) - 1
         new_coef_num = [
@@ -264,27 +323,9 @@ class siarray:
                 new_coef_num[i + j] = new_coef_num[i + j] + c1 @ c2
 
         result_shape = new_coef_num[0].shape
-        new_coef_den = []
-        for c1 in self.coef_den:
-            for c2 in other.coef_den:
-                # 行列積の結果の形状に合わせて分母を複製
-                # スカラーまたは要素ごとの積を結果の形状にブロードキャスト
-                if c1.shape == () and c2.shape == ():
-                    # 両方スカラー
-                    den_val = c1.item() * c2.item()
-                    new_coef_den.append(np.full(result_shape, den_val))
-                elif c1.ndim == 1 and c2.ndim == 1:
-                    # ベクトル同士（外積的な扱い）
-                    den_val = c1[0] * c2[0]  # 簡易実装
-                    new_coef_den.append(np.full(result_shape, den_val))
-                elif c1.ndim == 2 and c2.ndim == 2:
-                    # 行列同士: 要素ごとの積の代表値を使用
-                    den_val = c1[0, 0] * c2[0, 0]  # 簡易実装
-                    new_coef_den.append(np.full(result_shape, den_val))
-                else:
-                    # その他の場合: 最初の要素の積を使用
-                    den_val = c1.flat[0] * c2.flat[0]
-                    new_coef_den.append(np.full(result_shape, den_val))
+        den_val = self.coef_den[0].flat[0] * other.coef_den[0].flat[0]
+        new_coef_den = [np.full(result_shape, den_val)]
+
         return siarray.from_rational(new_coef_num, new_coef_den)
 
     def __rmatmul__(self, other):
@@ -762,14 +803,12 @@ class siarray:
 
         # 通常の値で実行してモデルを取得
         # prob_vec = a + b * z
-        # print("debug: foward")
         # model = self.algorithm_func(siarray(prob_vec))
 
         prob_vec_rf = siarray.from_rational(
             numerator=[a, b],
             denominator=[np.ones_like(a)],
         )
-        # print("debug: forward_si")
         model = self.algorithm_func(prob_vec_rf)
 
         # 最終的なintervalsを取得
@@ -780,7 +819,6 @@ class siarray:
         else:
             output = model
 
-        # print("debug", intervals)
         return output, intervals
 
     def model_selector(self, searched_model: np.ndarray | "siarray") -> bool:
@@ -796,7 +834,6 @@ class siarray:
             else np.asarray(searched_model)
         )
         comparison = np.allclose(data1, data2)
-        # print("debug", comparison)
         return comparison
 
     def to_numpy(self):
@@ -826,7 +863,6 @@ class siarray:
 def calc_polynominal_interval(
     numerator: np.ndarray, denominator: np.ndarray, z: float, threshold: float = 0.0
 ) -> RealSubset:
-    # print("debug", numerator)
     """有理関数 > threshold となるzの範囲を計算"""
     if numerator.ndim < denominator.ndim:
         numerator = np.concatenate(
@@ -837,7 +873,6 @@ def calc_polynominal_interval(
             [denominator, np.zeros(numerator.ndim - denominator.ndim)]
         )
     intervals = polynomial_iso_sign_interval(numerator - denominator * threshold, z)
-    # print("debug:", intervals)
     return RealSubset(intervals)
 
 
