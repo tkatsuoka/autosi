@@ -252,30 +252,30 @@ class siarray:
         """分母を共通化（通分）する。ユニークな分母のみの積を使用。"""
         # 高速チェック: 各次数の係数配列が全要素同じか
         d0 = [c.flat[0] for c in self.coef_den]
-        all_same = all(
-            np.allclose(c, d0[deg]) for deg, c in enumerate(self.coef_den)
-        )
+        all_same = all(np.allclose(c, d0[deg]) for deg, c in enumerate(self.coef_den))
         if all_same:
             return self
-        
+
         flat_size = self.coef_num[0].size
-        
+
         # 各要素がどのユニーク分母に属するかをマッピング
         unique_dens = []
         elem_to_unique = []
-        
+
         for i in range(flat_size):
             den = [c.flat[i] for c in self.coef_den]
             found_idx = -1
             for j, u in enumerate(unique_dens):
-                if len(u) == len(den) and all(np.isclose(u[k], den[k]) for k in range(len(den))):
+                if len(u) == len(den) and all(
+                    np.isclose(u[k], den[k]) for k in range(len(den))
+                ):
                     found_idx = j
                     break
             if found_idx == -1:
                 found_idx = len(unique_dens)
                 unique_dens.append(den)
             elem_to_unique.append(found_idx)
-        
+
         # 各ユニーク分母に対して「それ以外の積」を事前計算
         n_unique = len(unique_dens)
         multipliers = []
@@ -285,26 +285,26 @@ class siarray:
                 if i != j:
                     mult = self._poly_mul(mult, unique_dens[j])
             multipliers.append(mult)
-        
+
         # 共通分母 = 全ユニーク分母の積
         common_den = self._poly_mul(multipliers[0], unique_dens[0])
-        
+
         # 各要素の分子を調整
         max_deg = len(common_den)
         new_num = [np.zeros(self._shape) for _ in range(max_deg)]
-        
+
         for i in range(flat_size):
             elem_num = [c.flat[i] for c in self.coef_num]
             mult = multipliers[elem_to_unique[i]]
             adjusted_num = self._poly_mul(elem_num, mult)
-            
+
             idx = np.unravel_index(i, self._shape)
             for deg, coef in enumerate(adjusted_num):
                 if deg < max_deg:
                     new_num[deg][idx] = coef
-        
+
         new_den = [np.full(self._shape, c) for c in common_den]
-        
+
         return siarray.from_rational(new_num, new_den)
 
     def __matmul__(self, other):
@@ -335,6 +335,21 @@ class siarray:
     def __neg__(self):
         new_coef_num = [-c.copy() for c in self.coef_num]
         return siarray.from_rational(new_coef_num, self.coef_den)
+
+    def __pow__(self, power):
+        """累乗演算"""
+        if isinstance(power, siarray):
+            power_val = int(power.data.item())
+        else:
+            power_val = power
+
+        if isinstance(self, siarray):
+            for _ in range(power_val - 1):
+                self = self * self
+            return self
+        else:
+            result_data = self.data**power_val
+            return siarray.constant(result_data)
 
     def __abs__(self):
         z = IntervalTracker.get_instance().get_z()
@@ -396,15 +411,6 @@ class siarray:
                 tracker.update(neg_intervals)
 
         return siarray.from_rational(new_coef_num, new_coef_den)
-
-    def __pow__(self, power):
-        """累乗演算"""
-        if isinstance(power, siarray):
-            power_val = power.data
-        else:
-            power_val = power
-        result_data = self.data**power_val
-        return siarray.constant(result_data)
 
     # ------------------------------------------------------------------------
     # 比較演算子
@@ -594,6 +600,176 @@ class siarray:
         coef_num = [np.array(sorted_idx)]
         coef_den = [np.ones_like(sorted_idx)]
         return siarray.from_rational(coef_num, coef_den)
+
+    def max(x, axis=None, keepdims=False):
+        """最大値（siarray対応）"""
+        if not isinstance(x, siarray):
+            x = siarray(x)
+
+        tracker = IntervalTracker.get_instance()
+        z = tracker.get_z()
+
+        if axis is None:
+            # 全要素から最大値を探す
+            flat_data = x.data.flatten()
+            max_idx = np.argmax(flat_data)
+
+            # 最大値が他の全要素より大きいことを制約に追加
+            for i in range(len(flat_data)):
+                if i != max_idx:
+                    flat_idx_max = np.unravel_index(max_idx, x._shape)
+                    flat_idx_i = np.unravel_index(i, x._shape)
+                    diff = x[flat_idx_max] - x[flat_idx_i]
+                    num = np.array(
+                        [c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num]
+                    )
+                    den = np.array(
+                        [c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den]
+                    )
+                    intervals = calc_polynominal_interval(num, den, z)
+                    tracker.update(intervals)
+
+            flat_idx = np.unravel_index(max_idx, x._shape)
+            return x[flat_idx]
+        else:
+            # 特定の軸に沿った最大値
+            if axis < 0:
+                axis = len(x._shape) + axis
+
+            max_indices = np.argmax(x.data, axis=axis)
+
+            if keepdims:
+                result_shape = list(x._shape)
+                result_shape[axis] = 1
+            else:
+                result_shape = tuple(s for i, s in enumerate(x._shape) if i != axis)
+
+            result_coef_num = [
+                np.zeros(result_shape if result_shape else (1,)) for _ in x.coef_num
+            ]
+            result_coef_den = [
+                np.zeros(result_shape if result_shape else (1,)) for _ in x.coef_den
+            ]
+
+            for idx in np.ndindex(max_indices.shape):
+                max_pos = max_indices[idx]
+                src_idx = list(idx)
+                src_idx.insert(axis, max_pos)
+                src_idx = tuple(src_idx)
+
+                # 制約を追加：最大値が同じ軸の他の要素より大きい
+                for i in range(x._shape[axis]):
+                    if i != max_pos:
+                        other_idx = list(idx)
+                        other_idx.insert(axis, i)
+                        other_idx = tuple(other_idx)
+                        diff = x[src_idx] - x[other_idx]
+                        num = np.array(
+                            [c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num]
+                        )
+                        den = np.array(
+                            [c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den]
+                        )
+                        intervals = calc_polynominal_interval(num, den, z)
+                        tracker.update(intervals)
+
+                dst_idx = (
+                    idx
+                    if not keepdims
+                    else tuple(list(idx[:axis]) + [0] + list(idx[axis:]))
+                )
+                for deg in range(len(x.coef_num)):
+                    result_coef_num[deg][dst_idx] = x.coef_num[deg][src_idx]
+                for deg in range(len(x.coef_den)):
+                    result_coef_den[deg][dst_idx] = x.coef_den[deg][src_idx]
+
+            return siarray.from_rational(result_coef_num, result_coef_den)
+
+    def min(x, axis=None, keepdims=False):
+        """最小値（siarray対応）"""
+        if not isinstance(x, siarray):
+            x = siarray(x)
+
+        tracker = IntervalTracker.get_instance()
+        z = tracker.get_z()
+
+        if axis is None:
+            # 全要素から最小値を探す
+            flat_data = x.data.flatten()
+            min_idx = np.argmin(flat_data)
+
+            # 最小値が他の全要素より小さいことを制約に追加
+            for i in range(len(flat_data)):
+                if i != min_idx:
+                    flat_idx_min = np.unravel_index(min_idx, x._shape)
+                    flat_idx_i = np.unravel_index(i, x._shape)
+                    diff = x[flat_idx_i] - x[flat_idx_min]  # other - min >= 0
+                    num = np.array(
+                        [c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num]
+                    )
+                    den = np.array(
+                        [c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den]
+                    )
+                    intervals = calc_polynominal_interval(num, den, z, threshold=0.0)
+                    tracker.update(intervals)
+
+            flat_idx = np.unravel_index(min_idx, x._shape)
+            return x[flat_idx]
+        else:
+            # 特定の軸に沿った最小値
+            if axis < 0:
+                axis = len(x._shape) + axis
+
+            min_indices = np.argmin(x.data, axis=axis)
+
+            if keepdims:
+                result_shape = list(x._shape)
+                result_shape[axis] = 1
+            else:
+                result_shape = tuple(s for i, s in enumerate(x._shape) if i != axis)
+
+            result_coef_num = [
+                np.zeros(result_shape if result_shape else (1,)) for _ in x.coef_num
+            ]
+            result_coef_den = [
+                np.zeros(result_shape if result_shape else (1,)) for _ in x.coef_den
+            ]
+
+            for idx in np.ndindex(min_indices.shape):
+                min_pos = min_indices[idx]
+                src_idx = list(idx)
+                src_idx.insert(axis, min_pos)
+                src_idx = tuple(src_idx)
+
+                # 制約を追加：最小値が同じ軸の他の要素より小さい
+                for i in range(x._shape[axis]):
+                    if i != min_pos:
+                        other_idx = list(idx)
+                        other_idx.insert(axis, i)
+                        other_idx = tuple(other_idx)
+                        diff = x[other_idx] - x[src_idx]  # other - min >= 0
+                        num = np.array(
+                            [c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num]
+                        )
+                        den = np.array(
+                            [c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den]
+                        )
+                        intervals = calc_polynominal_interval(
+                            num, den, z, threshold=0.0
+                        )
+                        tracker.update(intervals)
+
+                dst_idx = (
+                    idx
+                    if not keepdims
+                    else tuple(list(idx[:axis]) + [0] + list(idx[axis:]))
+                )
+                for deg in range(len(x.coef_num)):
+                    result_coef_num[deg][dst_idx] = x.coef_num[deg][src_idx]
+                for deg in range(len(x.coef_den)):
+                    result_coef_den[deg][dst_idx] = x.coef_den[deg][src_idx]
+
+            return siarray.from_rational(result_coef_num, result_coef_den)
 
     def copy(self):
         return siarray.from_rational(
@@ -864,6 +1040,9 @@ def calc_polynominal_interval(
     numerator: np.ndarray, denominator: np.ndarray, z: float, threshold: float = 0.0
 ) -> RealSubset:
     """有理関数 > threshold となるzの範囲を計算"""
+
+    # denominator > 0となる場合，numerator - denominator * threshold > 0を解く
+
     if numerator.ndim < denominator.ndim:
         numerator = np.concatenate(
             [numerator, np.zeros(denominator.ndim - numerator.ndim)]
@@ -872,8 +1051,33 @@ def calc_polynominal_interval(
         denominator = np.concatenate(
             [denominator, np.zeros(numerator.ndim - denominator.ndim)]
         )
-    intervals = polynomial_iso_sign_interval(numerator - denominator * threshold, z)
+
+    positive_conditioned_invervals = RealSubset(
+        polynomial_iso_sign_interval(denominator, z)
+    )
+    positive_intervals = RealSubset(
+        polynomial_iso_sign_interval(numerator - denominator * threshold, z)
+    )
+    intervals = positive_conditioned_invervals & positive_intervals
+
+    # denominator < 0 となる場合，numerator - denominator * threshold < 0を解く
+    negative_conditioned_invervals = RealSubset(
+        polynomial_iso_sign_interval(-denominator, z)
+    )
+    negative_intervals = RealSubset(
+        polynomial_iso_sign_interval(denominator * threshold - numerator, z)
+    )
+    intervals = intervals | (negative_conditioned_invervals & negative_intervals)
+    print(intervals)
     return RealSubset(intervals)
+
+
+def mean(x, axis=None, keepdims=False):
+    """平均（siarray対応）"""
+    if isinstance(x, siarray):
+        return x.mean(axis=axis, keepdims=keepdims)
+    else:
+        return siarray(x).mean(axis=axis, keepdims=keepdims)
 
 
 def sum(x, axis=None, keepdims=False):
@@ -898,6 +1102,54 @@ def argsort(x, axis=-1, kind=None, order=None):
         return x.argsort(axis=axis, kind=kind, order=order)
     else:
         return siarray(x).argsort(axis=axis, kind=kind, order=order)
+
+
+def max(x, axis=None, keepdims=False):
+    """最大値（siarray対応）"""
+    if isinstance(x, siarray):
+        return siarray.max(x, axis=axis, keepdims=keepdims)
+    else:
+        return siarray(x).max(axis=axis, keepdims=keepdims)
+
+
+def min(x, axis=None, keepdims=False):
+    """最小値（siarray対応）"""
+    if isinstance(x, siarray):
+        return siarray.min(x, axis=axis, keepdims=keepdims)
+    else:
+        return siarray(x).min(axis=axis, keepdims=keepdims)
+
+
+def stack(arrays: list["siarray"], axis=0) -> "siarray":
+    """siarrayのスタック"""
+    if not arrays:
+        raise ValueError("arrays must not be empty")
+
+    # 各次数ごとにスタック
+    max_num_degree = max(len(arr.coef_num) for arr in arrays)
+    max_den_degree = max(len(arr.coef_den) for arr in arrays)
+
+    stacked_num = []
+    for deg in range(max_num_degree):
+        coef_list = []
+        for arr in arrays:
+            if deg < len(arr.coef_num):
+                coef_list.append(arr.coef_num[deg])
+            else:
+                coef_list.append(np.zeros_like(arr.coef_num[0]))
+        stacked_num.append(np.stack(coef_list, axis=axis))
+
+    stacked_den = []
+    for deg in range(max_den_degree):
+        coef_list = []
+        for arr in arrays:
+            if deg < len(arr.coef_den):
+                coef_list.append(arr.coef_den[deg])
+            else:
+                coef_list.append(np.ones_like(arr.coef_den[0]))
+        stacked_den.append(np.stack(coef_list, axis=axis))
+
+    return siarray.from_rational(stacked_num, stacked_den)
 
 
 def array(X):
