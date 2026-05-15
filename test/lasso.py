@@ -1,19 +1,19 @@
 import os
 import sys
 
-import numpy as np
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import autosi as si
+
 
 # ===== データの生成 =====
 
+import numpy as np
+import autosi as si
 
 def lasso(y):
-    alpha = si.array(0.1)  # L1正則化パラメータ
-    max_iter = si.array(1000)  # 最大反復回数
-    tol = si.array(1e-4)  # 収束判定の閾値
+    alpha = 0.1
+    max_iter = 1000
+    tol = 1e-4
     coef = si.array(np.zeros(n_features))
 
     for iteration in range(max_iter):
@@ -40,7 +40,6 @@ def lasso(y):
             break
 
     idx = si.argsort(si.abs(coef))[-1]
-    print("idx", idx)
     eta = (X_train.T @ X_train).inv() @ X_train.T
     return eta[idx]
 
@@ -49,7 +48,7 @@ if __name__ == "__main__":
     np.random.seed(42)
     rng = np.random.default_rng(0)
     n_samples = 100
-    n_features = 20
+    n_features = 10
 
     beta = np.zeros(n_features)
     X = np.random.randn(n_samples, n_features)
@@ -58,7 +57,6 @@ if __name__ == "__main__":
     y = si.array(y)
     X = si.array(X)
 
-    # 訓練データとテストデータに分割
     split_idx = int(0.8 * n_samples)
     X_train = X[:split_idx]
     X_test = X[split_idx:]

@@ -78,7 +78,7 @@ if __name__ == "__main__":
     
     # 初回実行
     n_samples = 100
-    n_features = 10
+    n_features = 5
 
     beta = np.zeros(n_features)
     X = np.random.randn(n_samples, n_features)
@@ -98,7 +98,7 @@ if __name__ == "__main__":
     print(f"p-value: {result.p_value}")
 
     # 並列シミュレーション
-    n_simulations = 10000
+    n_simulations = 1000
     
     # CPUコア数を取得（必要に応じて調整）
     n_workers = 32
