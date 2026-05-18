@@ -1054,8 +1054,9 @@ def calc_polynominal_interval(
             [denominator, np.zeros(len(numerator) - len(denominator))]
         )
 
-    # 多項式の次数を確認
-    # print(f"Numerator degree: {len(numerator) - 1}, Denominator degree: {len(denominator) - 1}")
+    # 次数を確認
+    if len(numerator) - 1 > 5:
+        print(f"Numerator degree: {len(numerator) - 1}, Denominator degree: {len(denominator) - 1}")
 
     positive_conditioned_invervals = RealSubset(
         polynomial_iso_sign_interval(denominator, z)
@@ -1073,6 +1074,7 @@ def calc_polynominal_interval(
         polynomial_iso_sign_interval(denominator * threshold - numerator, z)
     )
     intervals = intervals | (negative_conditioned_invervals & negative_intervals)
+
     return RealSubset(intervals)
 
 

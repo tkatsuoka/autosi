@@ -27,22 +27,22 @@ result = si.inference(eta=eta, prob_vec=y, var=1.0, algorithm=merginal_screening
 print("p-value", result.p_value)
 
 
-# p_values = []
+p_values = []
 
-# for i in range(1000):
-#     beta = np.zeros(10)
-#     X = rng.normal(0, 1, (200, 10))
-#     y = X @ beta + rng.normal(0, 1, 200)
+for i in range(1000):
+    beta = np.zeros(10)
+    X = rng.normal(0, 1, (200, 10))
+    y = X @ beta + rng.normal(0, 1, 200)
 
-#     y = si.siarray(y)
-#     X = si.siarray(X)
+    y = si.siarray(y)
+    X = si.siarray(X)
 
-#     eta = merginal_screening(y)
-#     result = si.inference(eta=eta, prob_vec=y, var=1.0, algorithm=merginal_screening)
-#     p_values.append(result.p_value)
-#     print(f"Iteration {i + 1}, p-value: {result.p_value}")
+    eta = merginal_screening(y)
+    result = si.inference(eta=eta, prob_vec=y, var=1.0, algorithm=merginal_screening)
+    p_values.append(result.p_value)
+    print(f"Iteration {i + 1}, p-value: {result.p_value}")
 
-# plt.hist(p_values, bins=20)
-# plt.xlabel("p-value")
-# plt.ylabel("Frequency")
-# plt.savefig("result/ms_p_values_hist.pdf")
+plt.hist(p_values, bins=20)
+plt.xlabel("p-value")
+plt.ylabel("Frequency")
+plt.savefig("result/ms_p_values_hist.pdf")
