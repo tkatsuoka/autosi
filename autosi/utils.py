@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import numpy as np
 
 from sicore import RealSubset, polynomial_iso_sign_interval
@@ -170,7 +171,7 @@ class siarray:
 
     @staticmethod
     def _poly_add(p1: list[np.ndarray], p2: list[np.ndarray]) -> list[np.ndarray]:
-        n = max(len(p1), len(p2))
+        n = builtins.max(len(p1), len(p2))
         result = []
         for i in range(n):
             c1 = p1[i] if i < len(p1) else np.zeros_like(p1[0])
@@ -180,7 +181,7 @@ class siarray:
 
     @staticmethod
     def _poly_sub(p1: list[np.ndarray], p2: list[np.ndarray]) -> list[np.ndarray]:
-        n = max(len(p1), len(p2))
+        n = builtins.max(len(p1), len(p2))
         result = []
         for i in range(n):
             c1 = p1[i] if i < len(p1) else np.zeros_like(p1[0])
@@ -344,9 +345,10 @@ class siarray:
             power_val = power
 
         if isinstance(self, siarray):
+            result = self
             for _ in range(power_val - 1):
-                self = self * self
-            return self
+                result = result * self
+            return result
         else:
             result_data = self.data**power_val
             return siarray.constant(result_data)
@@ -520,8 +522,8 @@ class siarray:
         value = self._to_siarray(value)
 
         # 分子・分母の次数を合わせる
-        max_num_degree = max(len(self.coef_num), len(value.coef_num))
-        max_den_degree = max(len(self.coef_den), len(value.coef_den))
+        max_num_degree = builtins.max(len(self.coef_num), len(value.coef_num))
+        max_den_degree = builtins.max(len(self.coef_den), len(value.coef_den))
 
         # 分子の次数を拡張
         while len(self.coef_num) < max_num_degree:
@@ -1043,14 +1045,17 @@ def calc_polynominal_interval(
 
     # denominator > 0となる場合，numerator - denominator * threshold > 0を解く
 
-    if numerator.ndim < denominator.ndim:
+    if len(numerator) < len(denominator):
         numerator = np.concatenate(
-            [numerator, np.zeros(denominator.ndim - numerator.ndim)]
+            [numerator, np.zeros(len(denominator) - len(numerator))]
         )
-    elif denominator.ndim < numerator.ndim:
+    elif len(denominator) < len(numerator):
         denominator = np.concatenate(
-            [denominator, np.zeros(numerator.ndim - denominator.ndim)]
+            [denominator, np.zeros(len(numerator) - len(denominator))]
         )
+
+    # 多項式の次数を確認
+    # print(f"Numerator degree: {len(numerator) - 1}, Denominator degree: {len(denominator) - 1}")
 
     positive_conditioned_invervals = RealSubset(
         polynomial_iso_sign_interval(denominator, z)
@@ -1068,7 +1073,6 @@ def calc_polynominal_interval(
         polynomial_iso_sign_interval(denominator * threshold - numerator, z)
     )
     intervals = intervals | (negative_conditioned_invervals & negative_intervals)
-    print(intervals)
     return RealSubset(intervals)
 
 
@@ -1126,8 +1130,8 @@ def stack(arrays: list["siarray"], axis=0) -> "siarray":
         raise ValueError("arrays must not be empty")
 
     # 各次数ごとにスタック
-    max_num_degree = max(len(arr.coef_num) for arr in arrays)
-    max_den_degree = max(len(arr.coef_den) for arr in arrays)
+    max_num_degree = builtins.max(len(arr.coef_num) for arr in arrays)
+    max_den_degree = builtins.max(len(arr.coef_den) for arr in arrays)
 
     stacked_num = []
     for deg in range(max_num_degree):
