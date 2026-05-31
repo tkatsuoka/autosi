@@ -81,8 +81,10 @@ def cv_r2_lasso(y):
             y_pred = X[val_idx] @ coef
             ss_res = si.sum((y_val - y_pred) ** 2)
             ss_tot = si.sum((y_val - si.sum(y_val) / len(val_idx)) ** 2)
-            fold_r2 = fold_r2 + si.array(1.0) - ss_res / ss_tot
-
+            # print(ss_res.deg, ss_tot.deg)
+            # print((ss_res / ss_tot).deg)
+            fold_r2 = fold_r2 + 1.0 - ss_res / ss_tot
+            print(fold_r2.deg)
         cv_r2.append(fold_r2 / K)
 
     # -----------------------------------------------------------------------
@@ -91,7 +93,9 @@ def cv_r2_lasso(y):
     # si.argsort が隣接要素の大小比較を記録するため、
     # λ* の選択条件が自動的に IntervalTracker に登録される。
     # -----------------------------------------------------------------------
-    lam_star_idx = si.argsort(si.stack(cv_r2))[-1]
+    # print([r2.deg for r2 in cv_r2])
+    # lam_star_idx = si.argsort(si.stack(cv_r2))[-1]
+    lam_star_idx = si.argmax(si.stack(cv_r2))
     lam_star = lambda_grid[lam_star_idx]
 
     # -----------------------------------------------------------------------
@@ -100,7 +104,7 @@ def cv_r2_lasso(y):
     col_sq_mean = si.sum(X ** 2, axis=0) / n_samples
     lambda_val = lam_star / n_samples
     coef = si.array(np.zeros(n_features))
-
+    # print(coef.deg)
     for _ in range(max_iter):
         coef_old = coef.copy()
         for j in range(n_features):
@@ -108,13 +112,14 @@ def cv_r2_lasso(y):
             z_j = X[:, j] @ r_j / n_samples
             if z_j > lambda_val:
                 coef[j] = (z_j - lambda_val) / col_sq_mean[j]
+                # print(coef[j].deg)
             elif z_j < -lambda_val:
                 coef[j] = (z_j + lambda_val) / col_sq_mean[j]
             else:
                 coef[j] = si.array(0.0)
         if si.sum(si.abs(coef - coef_old)) < tol:
             break
-
+    # print(coef.deg)
     # 絶対値最大の係数に対応する変数のコントラストベクトル η を返す
     idx = si.argsort(si.abs(coef))[-1]
     eta = (X.T @ X).inv() @ X.T

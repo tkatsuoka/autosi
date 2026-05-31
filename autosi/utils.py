@@ -143,6 +143,11 @@ class siarray:
 
         return (coef_num_val / coef_den_val).reshape(self._shape)
 
+    # 分子と分母の次数を取得するプロパティ
+    @property
+    def deg(self):
+        return (len(self.coef_num)-1, len(self.coef_den)-1)
+    
     def __int__(self):
         """整数への変換（range等で使用）"""
         if self.size != 1:
@@ -603,6 +608,7 @@ class siarray:
         coef_den = [np.ones_like(sorted_idx)]
         return siarray.from_rational(coef_num, coef_den)
 
+
     def max(x, axis=None, keepdims=False):
         """最大値（siarray対応）"""
         if not isinstance(x, siarray):
@@ -1052,11 +1058,7 @@ def calc_polynominal_interval(
     elif len(denominator) < len(numerator):
         denominator = np.concatenate(
             [denominator, np.zeros(len(numerator) - len(denominator))]
-        )
-
-    # 次数を確認
-    if len(numerator) - 1 > 5:
-        print(f"Numerator degree: {len(numerator) - 1}, Denominator degree: {len(denominator) - 1}")
+        )    
 
     positive_conditioned_invervals = RealSubset(
         polynomial_iso_sign_interval(denominator, z)
@@ -1108,6 +1110,59 @@ def argsort(x, axis=-1, kind=None, order=None):
         return x.argsort(axis=axis, kind=kind, order=order)
     else:
         return siarray(x).argsort(axis=axis, kind=kind, order=order)
+
+
+def argmax(x, axis=None):
+    """argmax（siarray対応）"""
+    if not isinstance(x, siarray):
+        x = siarray(x)
+
+    tracker = IntervalTracker.get_instance()
+    z = tracker.get_z()
+
+    if axis is None:
+        flat_data = x.data.flatten()
+        max_idx = int(np.argmax(flat_data))
+
+        for i in range(len(flat_data)):
+            if i != max_idx:
+                flat_idx_max = np.unravel_index(max_idx, x._shape)
+                flat_idx_i = np.unravel_index(i, x._shape)
+                diff = x[flat_idx_max] - x[flat_idx_i]
+                num = np.array(
+                    [c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num]
+                )
+                den = np.array(
+                    [c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den]
+                )
+                tracker.update(calc_polynominal_interval(num, den, z))
+
+        return siarray(np.array(max_idx))
+    else:
+        if axis < 0:
+            axis = len(x._shape) + axis
+        max_indices = np.argmax(x.data, axis=axis)
+
+        for idx in np.ndindex(max_indices.shape if max_indices.shape else (1,)):
+            max_pos = int(max_indices[idx]) if max_indices.shape else int(max_indices)
+            src_idx_max = list(idx)
+            src_idx_max.insert(axis, max_pos)
+            src_idx_max = tuple(src_idx_max)
+            for i in range(x._shape[axis]):
+                if i != max_pos:
+                    other_idx = list(idx)
+                    other_idx.insert(axis, i)
+                    other_idx = tuple(other_idx)
+                    diff = x[src_idx_max] - x[other_idx]
+                    num = np.array(
+                        [c.flatten()[0] if c.size > 0 else 0 for c in diff.coef_num]
+                    )
+                    den = np.array(
+                        [c.flatten()[0] if c.size > 0 else 1 for c in diff.coef_den]
+                    )
+                    tracker.update(calc_polynominal_interval(num, den, z))
+
+        return siarray(max_indices)
 
 
 def max(x, axis=None, keepdims=False):
