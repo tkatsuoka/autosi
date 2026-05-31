@@ -114,6 +114,15 @@ def run_single_simulation(i, n_samples, n_features, K, lambda_grid, seed_offset)
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--skip-initial", action="store_true",
+                        help="初回単体実行をスキップして直接並列シミュレーションへ")
+    parser.add_argument("--n-simulations", type=int, default=1000)
+    parser.add_argument("--n-workers", type=int, default=32)
+    args = parser.parse_args()
+
     # ============================================================================
     # 設定
     # ============================================================================
@@ -125,37 +134,41 @@ if __name__ == "__main__":
     rng = np.random.default_rng(0)
 
     # ============================================================================
-    # 初回実行（動作確認）
+    # 初回実行（動作確認）  --skip-initial で省略可能
     # ============================================================================
-    beta = np.zeros(n_features)
-    X_np = rng.normal(0, 1, (n_samples, n_features))
-    y_np = X_np @ beta + rng.normal(0, 1, n_samples)
-    fold_indices = np.array_split(rng.permutation(n_samples), K)
+    if not args.skip_initial:
+        print("初回実行中（時間がかかる場合は --skip-initial オプションを使用）...")
+        beta = np.zeros(n_features)
+        X_np = rng.normal(0, 1, (n_samples, n_features))
+        y_np = X_np @ beta + rng.normal(0, 1, n_samples)
+        fold_indices = np.array_split(rng.permutation(n_samples), K)
 
-    y = si.siarray(y_np)
-    X = si.siarray(X_np)
+        y = si.siarray(y_np)
+        X = si.siarray(X_np)
 
-    cv_r2_func = partial(
-        cv_r2_lasso,
-        X=X,
-        fold_indices=fold_indices,
-        lambda_grid=lambda_grid,
-        K=K,
-        n_features=n_features,
-        n_samples=n_samples,
-    )
+        cv_r2_func = partial(
+            cv_r2_lasso,
+            X=X,
+            fold_indices=fold_indices,
+            lambda_grid=lambda_grid,
+            K=K,
+            n_features=n_features,
+            n_samples=n_samples,
+        )
 
-    eta = cv_r2_func(y)
-    result = si.inference(eta=eta, prob_vec=y, var=1.0, algorithm=cv_r2_func)
-    print(f"p-value:       {result.p_value}")
-    print(f"naive p-value: {result.naive_p_value}")
+        eta = cv_r2_func(y)
+        result = si.inference(eta=eta, prob_vec=y, var=1.0, algorithm=cv_r2_func)
+        print(f"p-value:       {result.p_value}")
+        print(f"naive p-value: {result.naive_p_value}")
+    else:
+        print("初回実行をスキップ")
 
     # ============================================================================
     # 並列シミュレーション
     # ============================================================================
-    n_simulations = 1000
-    n_workers = 32
-    print(f"並列実行開始 (ワーカー数: {n_workers})")
+    n_simulations = args.n_simulations
+    n_workers = args.n_workers
+    print(f"並列実行開始 (ワーカー数: {n_workers}, シミュレーション数: {n_simulations})")
 
     p_values = [None] * n_simulations
     naive_p_values = [None] * n_simulations
