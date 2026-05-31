@@ -1,5 +1,5 @@
 from .inf import inference
-from .utils import IntervalTracker, abs, argmax, argsort, array, mean, siarray, sum, stack
+from .utils import IntervalTracker, abs, argmax, argsort, array, max, mean, min, siarray, sum, stack
 
 __all__ = [
     "inference",
