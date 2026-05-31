@@ -24,7 +24,7 @@ import autosi as si
 # ============================================================================
 
 def cv_r2_lasso(y, *, X, fold_indices, lambda_grid, K, n_features, n_samples,
-                max_iter=1000, tol=1e-4):
+                max_iter=500, tol=1e-3):
     cv_r2 = []
     for lam in lambda_grid:
         fold_r2 = si.array(0.0)
@@ -126,10 +126,10 @@ if __name__ == "__main__":
     # ============================================================================
     # 設定
     # ============================================================================
-    n_samples = 100
+    n_samples = 200
     n_features = 5
     K = 3
-    lambda_grid = np.logspace(-4, 0, 10)
+    lambda_grid = np.logspace(-4, 0, 5)
 
     rng = np.random.default_rng(0)
 
