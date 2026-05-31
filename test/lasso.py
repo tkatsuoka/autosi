@@ -72,7 +72,7 @@ if __name__ == "__main__":
 
     for i in range(1000):
         n_samples = 100
-        n_features = 20
+        n_features = 10
 
         beta = np.zeros(n_features)
         X = np.random.randn(n_samples, n_features)
