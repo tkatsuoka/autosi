@@ -110,7 +110,7 @@ def run_single_simulation(i, n_samples, n_features, K, lambda_grid, seed_offset)
     eta = cv_r2_func(y)
     result = si.inference(eta=eta, prob_vec=y, var=1.0, algorithm=cv_r2_func)
 
-    return i, result.p_value
+    return i, result.p_value, result.naive_p_value
 
 
 if __name__ == "__main__":
@@ -147,7 +147,8 @@ if __name__ == "__main__":
 
     eta = cv_r2_func(y)
     result = si.inference(eta=eta, prob_vec=y, var=1.0, algorithm=cv_r2_func)
-    print(f"p-value: {result.p_value}")
+    print(f"p-value:       {result.p_value}")
+    print(f"naive p-value: {result.naive_p_value}")
 
     # ============================================================================
     # 並列シミュレーション
@@ -157,6 +158,7 @@ if __name__ == "__main__":
     print(f"並列実行開始 (ワーカー数: {n_workers})")
 
     p_values = [None] * n_simulations
+    naive_p_values = [None] * n_simulations
 
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
         futures = {
@@ -169,17 +171,31 @@ if __name__ == "__main__":
 
         with tqdm(total=n_simulations, desc="シミュレーション実行中") as pbar:
             for future in as_completed(futures):
-                i, p_value = future.result()
+                i, p_value, naive_p_value = future.result()
                 p_values[i] = p_value
-                pbar.set_postfix({"最新のp-value": f"{p_value:.4f}"})
+                naive_p_values[i] = naive_p_value
+                pbar.set_postfix({"p-value": f"{p_value:.4f}", "naive": f"{naive_p_value:.4f}"})
                 pbar.update(1)
 
     # ============================================================================
     # 可視化
     # ============================================================================
     import matplotlib.pyplot as plt
+
+    plt.figure()
     plt.hist(p_values, bins=20, range=(0, 1))
     plt.xlabel("p-value")
     plt.ylabel("Frequency")
+    plt.title("Selective p-values")
     plt.savefig("result/cv_r2_lasso_p_values_hist.pdf")
+    plt.close()
     print("完了: result/cv_r2_lasso_p_values_hist.pdf")
+
+    plt.figure()
+    plt.hist(naive_p_values, bins=20, range=(0, 1))
+    plt.xlabel("p-value")
+    plt.ylabel("Frequency")
+    plt.title("Naive p-values")
+    plt.savefig("result/cv_r2_lasso_naive_p_values_hist.pdf")
+    plt.close()
+    print("完了: result/cv_r2_lasso_naive_p_values_hist.pdf")
