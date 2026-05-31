@@ -110,7 +110,7 @@ def run_single_simulation(i, n_samples, n_features, K, lambda_grid, seed_offset)
     eta = cv_r2_func(y)
     result = si.inference(eta=eta, prob_vec=y, var=1.0, algorithm=cv_r2_func)
 
-    return i, result.p_value, result.naive_p_value
+    return i, result.p_value, result.naive_p_value()
 
 
 if __name__ == "__main__":
@@ -159,7 +159,7 @@ if __name__ == "__main__":
         eta = cv_r2_func(y)
         result = si.inference(eta=eta, prob_vec=y, var=1.0, algorithm=cv_r2_func)
         print(f"p-value:       {result.p_value}")
-        print(f"naive p-value: {result.naive_p_value}")
+        print(f"naive p-value: {result.naive_p_value()}")
     else:
         print("初回実行をスキップ")
 
