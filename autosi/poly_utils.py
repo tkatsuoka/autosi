@@ -197,44 +197,122 @@ def _poly_gcd_1d(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 def poly_reduce(
     num: list[np.ndarray], den: list[np.ndarray]
 ) -> tuple[list[np.ndarray], list[np.ndarray]]:
-    """スカラー有理多項式を既約分数に簡約化する。
+    """有理多項式を既約分数に簡約化する。
 
     以下の場合は即座にそのまま返す（オーバーヘッドを最小化）:
-    - 配列係数（shape != ()）
     - num か den のどちらかが定数（degree 0）→ GCDは必ず定数
+    スカラー係数と配列係数の両方に対応。
     """
-    # 配列係数は非対応
-    if np.asarray(num[0]).shape != ():
-        return num, den
-
     # どちらかが定数なら多項式GCDは常に定数 → 約分不要
     if len(num) <= 1 or len(den) <= 1:
         return num, den
 
+    shape = np.asarray(num[0]).shape
+
+    if shape == ():
+        return _poly_reduce_scalar(num, den)
+    else:
+        return _poly_reduce_array(num, den, shape)
+
+
+def _poly_reduce_scalar(
+    num: list[np.ndarray], den: list[np.ndarray]
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """スカラー係数の有理多項式を約分（既存の高速パス）"""
     a = np.array([float(c) for c in num])
     b = np.array([float(c) for c in den])
     gcd = _poly_gcd_1d(a, b)
 
-    # GCDが定数なら約分不要
     if len(gcd) <= 1:
         return num, den
 
     q_num, r_num = polydiv(a, gcd)
     q_den, r_den = polydiv(b, gcd)
 
-    # 浮動小数点誤差により割り切れない場合はスキップ
     if not (np.allclose(r_num, 0, atol=1e-10) and np.allclose(r_den, 0, atol=1e-10)):
         return num, den
 
     q_num = np.atleast_1d(polytrim(q_num))
     q_den = np.atleast_1d(polytrim(q_den))
-
     if len(q_num) == 0:
         q_num = np.array([0.0])
     if len(q_den) == 0:
         q_den = np.array([1.0])
 
     return [np.array(c) for c in q_num], [np.array(c) for c in q_den]
+
+
+def _poly_reduce_array(
+    num: list[np.ndarray], den: list[np.ndarray], shape: tuple
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """配列係数の有理多項式を要素ごとにGCD約分する。
+
+    各要素を独立にGCD計算し、約分できた要素のみ更新する。
+    約分できた要素が1つもなければ元のリストをそのまま返す。
+    """
+    n = np.asarray(num[0]).size
+
+    # 係数行列: (n, degree+1) の形式に変換
+    nums_mat = np.array([c.flatten() for c in num], dtype=float).T  # (n, d_num)
+    dens_mat = np.array([c.flatten() for c in den], dtype=float).T  # (n, d_den)
+
+    new_num_rows: list[np.ndarray] = []
+    new_den_rows: list[np.ndarray] = []
+    any_reduced = False
+
+    for i in range(n):
+        a_i = np.atleast_1d(polytrim(nums_mat[i]))
+        b_i = np.atleast_1d(polytrim(dens_mat[i]))
+        if len(a_i) == 0:
+            a_i = np.array([0.0])
+        if len(b_i) == 0:
+            b_i = np.array([1.0])
+
+        gcd_i = _poly_gcd_1d(a_i, b_i)
+
+        if len(gcd_i) <= 1:
+            # GCDが定数 → この要素は約分なし
+            new_num_rows.append(a_i)
+            new_den_rows.append(b_i)
+            continue
+
+        q_num_i, r_num_i = polydiv(a_i, gcd_i)
+        q_den_i, r_den_i = polydiv(b_i, gcd_i)
+
+        # 浮動小数点誤差で割り切れない場合はスキップ
+        if not (np.allclose(r_num_i, 0, atol=1e-10) and np.allclose(r_den_i, 0, atol=1e-10)):
+            new_num_rows.append(a_i)
+            new_den_rows.append(b_i)
+            continue
+
+        q_num_i = np.atleast_1d(polytrim(q_num_i))
+        q_den_i = np.atleast_1d(polytrim(q_den_i))
+        if len(q_num_i) == 0:
+            q_num_i = np.array([0.0])
+        if len(q_den_i) == 0:
+            q_den_i = np.array([1.0])
+
+        new_num_rows.append(q_num_i)
+        new_den_rows.append(q_den_i)
+        any_reduced = True
+
+    if not any_reduced:
+        return num, den
+
+    # 約分後の最大次数に合わせてパディングし係数リストを再構築
+    max_d_num = max(len(r) for r in new_num_rows)
+    max_d_den = max(len(r) for r in new_den_rows)
+
+    new_nums_mat = np.zeros((n, max_d_num))
+    new_dens_mat = np.zeros((n, max_d_den))
+    for i, (r_n, r_d) in enumerate(zip(new_num_rows, new_den_rows)):
+        new_nums_mat[i, :len(r_n)] = r_n
+        new_dens_mat[i, :len(r_d)] = r_d
+
+    new_num_list = [new_nums_mat[:, k].reshape(shape) for k in range(max_d_num)]
+    new_den_list = [new_dens_mat[:, k].reshape(shape) for k in range(max_d_den)]
+
+    return new_num_list, new_den_list
 
 
 def calc_polynominal_interval(
