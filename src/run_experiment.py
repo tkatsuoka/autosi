@@ -120,6 +120,9 @@ def main():
                         help="seed 範囲の開始 (既定: 0)")
     parser.add_argument("--seed_end", type=int, default=None,
                         help="seed 範囲の終了 (排他的, 既定: --iter)")
+    parser.add_argument("--seed_offset", type=int, default=0,
+                        help="全 seed に加える定数。手法ごとに変えると "
+                             "手法間で異なるデータになり独立性が保てる")
     parser.add_argument("--n_samples", type=int, default=200)
     parser.add_argument("--n_features", type=int, default=10,
                         help="特徴量数 p (論文: 10)")
@@ -166,15 +169,17 @@ def main():
         if d not in DATA_TYPES:
             raise ValueError(f"unknown data_type: {d} (choices: {DATA_TYPES})")
 
-    # 条件 (手法 × データ種別 × seed) のタスクを列挙
+    # 条件 (手法 × データ種別 × seed) のタスクを列挙。
+    # seed_offset を足すことで手法ごとに異なるデータを使える (独立性確保)。
     tasks = [
-        (method, data_type, seed, cfg)
+        (method, data_type, seed + args.seed_offset, cfg)
         for method in methods
         for data_type in data_types
         for seed in range(seed_start, seed_end)
     ]
     print(f"methods={methods} data_types={data_types} "
-          f"seeds=[{seed_start},{seed_end}) -> {len(tasks)} tasks")
+          f"seeds=[{seed_start},{seed_end})+{args.seed_offset} "
+          f"-> {len(tasks)} tasks")
 
     records = []
     if args.workers <= 1:

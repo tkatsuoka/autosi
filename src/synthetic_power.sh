@@ -41,6 +41,14 @@ while getopts "m:d:n:p:s:k:w:q:" o; do case $o in
     w) WORKERS=$OPTARG;; q) QUEUE=$OPTARG;;
 esac; done
 
+# 手法ごとに seed をずらし、手法間で異なるデータ (独立) にする
+case $METHOD in
+    marginal_screening) OFFSET=0;;
+    lasso)              OFFSET=1000000;;
+    cv_r2_lasso)        OFFSET=2000000;;
+    *)                  OFFSET=0;;
+esac
+
 for sig in $SIGNALS; do
     OUTDIR=result/power/${METHOD}_${DATA_TYPE}_d${sig}
     mkdir -p "$OUTDIR"
@@ -48,7 +56,7 @@ for sig in $SIGNALS; do
         s=$((i * PER)); e=$(((i + 1) * PER))
         args="--methods $METHOD --data_types $DATA_TYPE \
               --signal $sig --n_signal $N_SIGNAL \
-              --seed_start $s --seed_end $e --workers $WORKERS \
+              --seed_start $s --seed_end $e --seed_offset $OFFSET --workers $WORKERS \
               --out $OUTDIR/part_${i}.csv"
         qsub -q "$QUEUE" -l select=1:ncpus=${WORKERS}:mem=96gb -l walltime=24:00:00 \
              -v MYARGS="$args" "$0"

@@ -40,13 +40,21 @@ while getopts "m:d:N:n:p:w:q:" o; do case $o in
     n) NSPLIT=$OPTARG;; p) PER=$OPTARG;; w) WORKERS=$OPTARG;; q) QUEUE=$OPTARG;;
 esac; done
 
+# 手法ごとに seed をずらし、手法間で異なるデータ (独立) にする
+case $METHOD in
+    marginal_screening) OFFSET=0;;
+    lasso)              OFFSET=1000000;;
+    cv_r2_lasso)        OFFSET=2000000;;
+    *)                  OFFSET=0;;
+esac
+
 for ns in $NSAMPLES; do
     OUTDIR=result/fpr/${METHOD}_${DATA_TYPE}/n${ns}
     mkdir -p "$OUTDIR"
     for ((i = 0; i < NSPLIT; i++)); do
         s=$((i * PER)); e=$(((i + 1) * PER))
         args="--methods $METHOD --data_types $DATA_TYPE --signal 0.0 \
-              --n_samples $ns --seed_start $s --seed_end $e \
+              --n_samples $ns --seed_start $s --seed_end $e --seed_offset $OFFSET \
               --workers $WORKERS --out $OUTDIR/part_${i}.csv"
         qsub -q "$QUEUE" -l select=1:ncpus=${WORKERS}:mem=96gb -l walltime=24:00:00 \
              -v MYARGS="$args" "$0"
