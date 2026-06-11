@@ -4,12 +4,14 @@
 #   - PBS から MYARGS つきで実行 -> python を 1 ジョブ分だけ走らせる
 # null (signal=0) でデータを生成し、p 値が一様か (FPR が α 近傍か) を見る。
 #
+# サンプル数 n を振り (横軸)、各 n で type I error rate を測る。
+#
 # 使い方 (プロジェクトルートで実行):
 #   bash src/synthetic_fpr.sh                       # 既定で投入
-#   bash src/synthetic_fpr.sh -m lasso -d iid -n 10 -p 1000 -w 96
+#   bash src/synthetic_fpr.sh -m lasso -d iid -N "100 200 300 400" -n 10 -p 1000
 #
-# オプション: -m 手法  -d データ種別  -n 分割数(ジョブ数)
-#             -p 1ジョブのp値数  -w ワーカー数  -q キュー
+# オプション: -m 手法  -d データ種別  -N "サンプル数のリスト"
+#             -n 分割数(ジョブ数)  -p 1ジョブのp値数  -w ワーカー数  -q キュー
 
 #PBS -N synthetic_fpr
 #PBS -j oe
@@ -24,30 +26,32 @@ if [ -n "${MYARGS:-}" ]; then
     exit 0
 fi
 
-# --- ランチャ: シード範囲ごとに自分自身を qsub ---
-METHOD=lasso;
-DATA_TYPE=iid;
-NSPLIT=10;
-PER=1000;
-WORKERS=96;
+# --- ランチャ: サンプル数 n × シード範囲ごとに自分自身を qsub ---
+METHOD=lasso
+DATA_TYPE=iid
+NSAMPLES="100 200 300 400"   # 横軸となるサンプル数のリスト
+NSPLIT=10
+PER=1000
+WORKERS=96
 QUEUE=cpu-medium
 
-while getopts "m:d:n:p:w:q:" o; do case $o in
-    m) METHOD=$OPTARG;; d) DATA_TYPE=$OPTARG;; n) NSPLIT=$OPTARG;;
-    p) PER=$OPTARG;; w) WORKERS=$OPTARG;; q) QUEUE=$OPTARG;;
+while getopts "m:d:N:n:p:w:q:" o; do case $o in
+    m) METHOD=$OPTARG;; d) DATA_TYPE=$OPTARG;; N) NSAMPLES=$OPTARG;;
+    n) NSPLIT=$OPTARG;; p) PER=$OPTARG;; w) WORKERS=$OPTARG;; q) QUEUE=$OPTARG;;
 esac; done
 
-OUTDIR=result/fpr/${METHOD}_${DATA_TYPE}
-mkdir -p "$OUTDIR"
-
-for ((i = 0; i < NSPLIT; i++)); do
-    s=$((i * PER)); e=$(((i + 1) * PER))
-    args="--methods $METHOD --data_types $DATA_TYPE --signal 0.0 \
-          --seed_start $s --seed_end $e --workers $WORKERS \
-          --out $OUTDIR/part_${i}.csv"
-    qsub -q "$QUEUE" -l select=1:ncpus=${WORKERS}:mem=96gb -l walltime=24:00:00 \
-         -v MYARGS="$args" "$0"
+for ns in $NSAMPLES; do
+    OUTDIR=result/fpr/${METHOD}_${DATA_TYPE}/n${ns}
+    mkdir -p "$OUTDIR"
+    for ((i = 0; i < NSPLIT; i++)); do
+        s=$((i * PER)); e=$(((i + 1) * PER))
+        args="--methods $METHOD --data_types $DATA_TYPE --signal 0.0 \
+              --n_samples $ns --seed_start $s --seed_end $e \
+              --workers $WORKERS --out $OUTDIR/part_${i}.csv"
+        qsub -q "$QUEUE" -l select=1:ncpus=${WORKERS}:mem=96gb -l walltime=24:00:00 \
+             -v MYARGS="$args" "$0"
+    done
 done
 
-echo "投入完了: $NSPLIT ジョブ, 計 $((NSPLIT * PER)) 個の p 値 -> $OUTDIR"
-echo "完了後: uv run python src/merge_results.py --indir $OUTDIR --out result/fpr_${METHOD}_${DATA_TYPE}.csv"
+echo "投入完了 -> result/fpr/${METHOD}_${DATA_TYPE}/ 以下。完了後:"
+echo "  uv run python src/plot_results.py --csv result/fpr/${METHOD}_${DATA_TYPE}"

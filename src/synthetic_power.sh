@@ -7,7 +7,7 @@
 #
 # 使い方 (プロジェクトルートで実行):
 #   bash src/synthetic_power.sh                                  # 既定で投入
-#   bash src/synthetic_power.sh -m lasso -d iid -n 10 -p 1000 -s "0.2 0.4 0.6 0.8"
+#   bash src/synthetic_power.sh -m lasso -d iid -n 10 -p 1000 -s "0.1 0.2 0.3 0.4"
 #
 # オプション: -m 手法  -d データ種別  -n 分割数(ジョブ数)  -p 1ジョブのp値数
 #             -s "Δのリスト"  -k 信号特徴量数  -w ワーカー数  -q キュー
@@ -30,8 +30,8 @@ METHOD=lasso;
 DATA_TYPE=iid;
 NSPLIT=10;
 PER=1000;
-SIGNALS="0.2 0.4 0.6 0.8";
-N_SIGNAL=3;
+SIGNALS="0.1 0.2 0.3 0.4";
+N_SIGNAL=5;
 WORKERS=96;
 QUEUE=cpu-medium
 

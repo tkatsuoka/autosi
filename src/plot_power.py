@@ -1,11 +1,11 @@
-"""検出力 (power) 実験の結果を作図する。
+"""検出力 (power) 実験の結果を (手法 × データ種別) ごとに折れ線グラフ化する。
 
-横軸を信号の傾き Δ、縦軸を power (= p 値 < α の割合) として、
-手法ごと・データ種別ごとに曲線を描く。Δ が大きいほど power が
-1 に近づくのが期待される挙動。
+横軸: 信号の傾き Δ、縦軸: power (= p 値 < α の割合)。
+(手法, データ種別) の組ごとに完全に別ファイル
+(result/power_<method>_<data_type>.pdf) を 1 本の折れ線で出力する。
 
 使い方 (CSV 単体でもフォルダでも可。フォルダは再帰的に全 CSV を読む):
-  python src/plot_power.py --csv result/power_results.csv
+  python src/plot_power.py --csv result/power/lasso_iid_d0.1
   python src/plot_power.py --csv result/power
 """
 
@@ -13,14 +13,35 @@ import os
 import sys
 import argparse
 
-import numpy as np
 import matplotlib.pyplot as plt
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.merge_results import load_results
 
-METHODS = ["marginal_screening", "lasso", "cv_r2_lasso"]
-DATA_TYPES = ["iid", "correlated"]
+
+def plot_one(sub, method, data_type, alpha, outdir):
+    """(手法, データ種別) 1 組の power 折れ線グラフ (横軸 Δ, 線 1 本) を描く。"""
+    # Δ ごとに power = P(p 値 < α) を集計
+    power = (
+        sub.assign(reject=sub.p_value < alpha)
+        .groupby("signal")["reject"].mean()
+        .sort_index()
+    )
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    ax.plot(power.index, power.values, marker="o", color="C0")
+    ax.axhline(alpha, color="gray", ls="--", lw=1, label=f"alpha={alpha}")
+    ax.set_xlabel("signal Δ")
+    ax.set_ylabel("power")
+    ax.set_title(f"{method} ({data_type})")
+    ax.set_ylim(0, 1.02)
+    ax.grid(alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    path = os.path.join(outdir, f"power_{method}_{data_type}.pdf")
+    fig.savefig(path)
+    plt.close(fig)
+    print(f"saved {path}")
 
 
 def main():
@@ -34,39 +55,9 @@ def main():
     df = load_results(args.csv)
     os.makedirs(args.outdir, exist_ok=True)
 
-    # 各 (手法, データ種別, Δ) で power = P(p 値 < α) を集計
-    df["reject"] = df.p_value < args.alpha
-    grouped = (
-        df.groupby(["method", "data_type", "signal"])["reject"]
-        .mean()
-        .reset_index()
-        .rename(columns={"reject": "power"})
-    )
-
-    # データ種別ごとにサブプロット。手法を曲線で重ねる。
-    fig, axes = plt.subplots(1, len(DATA_TYPES), figsize=(11, 5), sharey=True)
-    for ax, dt in zip(np.atleast_1d(axes), DATA_TYPES):
-        for method in METHODS:
-            sub = grouped[(grouped.method == method) & (grouped.data_type == dt)]
-            sub = sub.sort_values("signal")
-            if sub.empty:
-                continue
-            ax.plot(sub.signal, sub.power, marker="o", label=method)
-        ax.axhline(args.alpha, color="gray", ls="--", lw=1,
-                   label=f"alpha={args.alpha}")
-        ax.set_title(dt)
-        ax.set_xlabel("signal Δ")
-        ax.set_ylim(0, 1.02)
-        ax.grid(alpha=0.3)
-    axes[0].set_ylabel("power (P[p-value < alpha])")
-    axes[0].legend(fontsize=9)
-    fig.suptitle("Power vs signal strength")
-    fig.tight_layout()
-    path = os.path.join(args.outdir, "power.pdf")
-    fig.savefig(path)
-    plt.close(fig)
-    print(f"saved {path}")
-    print("\n" + grouped.to_string(index=False))
+    # (手法, データ種別) の組ごとに 1 枚ずつ出力
+    for (method, data_type), sub in df.groupby(["method", "data_type"]):
+        plot_one(sub, method, data_type, args.alpha, args.outdir)
 
 
 if __name__ == "__main__":

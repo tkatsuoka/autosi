@@ -120,12 +120,13 @@ def main():
                         help="seed 範囲の開始 (既定: 0)")
     parser.add_argument("--seed_end", type=int, default=None,
                         help="seed 範囲の終了 (排他的, 既定: --iter)")
-    parser.add_argument("--n_samples", type=int, default=100)
-    parser.add_argument("--n_features", type=int, default=5)
+    parser.add_argument("--n_samples", type=int, default=200)
+    parser.add_argument("--n_features", type=int, default=10,
+                        help="特徴量数 p (論文: 10)")
     parser.add_argument("--signal", type=float, default=0.0,
                         help="真の係数の傾き Δ (0=null/FPR, >0=power)")
-    parser.add_argument("--n_signal", type=int, default=3,
-                        help="信号を載せる先頭特徴量の数")
+    parser.add_argument("--n_signal", type=int, default=5,
+                        help="信号を載せる先頭特徴量の数 (論文: 5)")
     parser.add_argument("--out", type=str, default="result/experiment_results.csv")
     # lasso / cv 共通ハイパラ
     parser.add_argument("--alpha", type=float, default=0.1)
