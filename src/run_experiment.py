@@ -142,11 +142,11 @@ def main():
     parser.add_argument("--out", type=str, default="result/experiment_results.csv")
     # lasso / cv 共通ハイパラ
     parser.add_argument("--alpha", type=float, default=0.1)
-    parser.add_argument("--max_iter", type=int, default=500)
+    parser.add_argument("--max_iter", type=int, default=400)
     parser.add_argument("--tol", type=float, default=1e-4)
     # cv_r2_lasso 固有
     parser.add_argument("--K", type=int, default=3)
-    parser.add_argument("--n_lambda", type=int, default=5)
+    parser.add_argument("--n_lambda", type=int, default=10)
     parser.add_argument("--lam_lo", type=float, default=-4.0)
     parser.add_argument("--lam_hi", type=float, default=0.0)
     args = parser.parse_args()
