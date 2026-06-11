@@ -17,9 +17,11 @@ def main():
     parser.add_argument("--out", type=str, default="result/experiment_results.csv")
     args = parser.parse_args()
 
-    paths = sorted(glob.glob(os.path.join(args.indir, "*.csv")))
+    # 直下とサブフォルダ (power はΔごとにサブフォルダ) を再帰的に拾う
+    paths = sorted(glob.glob(os.path.join(args.indir, "**", "*.csv"),
+                             recursive=True))
     if not paths:
-        raise SystemExit(f"no csv found in {args.indir}")
+        raise SystemExit(f"no csv found under {args.indir}")
 
     dfs = [pd.read_csv(p) for p in paths]
     df = pd.concat(dfs, ignore_index=True)
