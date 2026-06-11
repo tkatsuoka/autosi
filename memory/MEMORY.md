@@ -1,0 +1,1 @@
+- [多項式区間計算メモ化の設計](poly-memoization-design.md) — forward_si の z 反復最適化（a,b固定/根z不変）の根拠とキャッシュ管理

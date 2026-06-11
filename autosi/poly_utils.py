@@ -88,49 +88,69 @@ def _denom_is_one(coef_den: list[np.ndarray]) -> bool:
     return len(coef_den) == 1 and np.allclose(coef_den[0], 1.0)
 
 
-def _batch_iso_sign_intervals(coefs: np.ndarray, z: float) -> np.ndarray:
-    """複数の多項式の iso-sign 区間をバッチ計算する。
+def _poly_roots(coefs: np.ndarray) -> tuple:
+    """複数多項式の根（z 非依存）を計算する。
 
-    polynomial_iso_sign_interval を n 回呼ぶ代わりに、コンパニオン行列の
-    固有値計算を np.linalg.eigvals のバッチ処理でまとめて行う。
+    根は z に依存しないため、forward_si の z 反復間でキャッシュできる
+    （メモ化レベルA）。区間への変換は _iso_from_roots が z ごとに行う。
 
     Args:
         coefs: shape (n, d+1)、各行が1つの多項式の昇順係数
-        z: 基準点
     Returns:
-        shape (n, 2) の配列 [[lower, upper], ...]
+        ("const", n) | ("linear", roots(n,)) | ("poly", real_roots(n, d))
     """
     n, d1 = coefs.shape
     d = d1 - 1
-    result = np.empty((n, 2))
-    result[:, 0] = -np.inf
-    result[:, 1] = np.inf
 
     if d == 0:
-        return result  # 定数多項式: 根なし → (-inf, inf)
+        return ("const", n)  # 定数多項式: 根なし → (-inf, inf)
 
     if d == 1:
         # 線形: root = -a/b（解析解で最速）
         a, b = coefs[:, 0], coefs[:, 1]
         valid = np.abs(b) > 1e-15
         roots = np.where(valid, -a / np.where(valid, b, 1.0), np.nan)
-        result[:, 0] = np.where(roots < z, roots, -np.inf)
-        result[:, 1] = np.where(roots > z, roots, np.inf)
-        return result
+        return ("linear", roots)
 
     # 高次: コンパニオン行列の固有値をバッチ計算
     # companion[k, 1:, :-1] = I(d-1)、companion[k, :, -1] = -coef[k, :-1] / leading[k]
     leading = coefs[:, -1]
     C = np.zeros((n, d, d))
-    if d > 1:
-        C[:, 1:, :-1] = np.eye(d - 1)  # サブ対角線の1（全ポリノミアル共通）
+    C[:, 1:, :-1] = np.eye(d - 1)  # サブ対角線の1（全ポリノミアル共通）
     safe_leading = np.where(np.abs(leading) > 1e-15, leading, 1.0)
     C[:, :, -1] = -coefs[:, :-1] / safe_leading[:, np.newaxis]
 
     eigenvalues = np.linalg.eigvals(C)  # (n, d) complex、バッチ固有値計算
-
     # polynomial_iso_sign_interval に合わせて複素根の実部もそのまま使用
-    real_roots = eigenvalues.real  # (n, d)
+    return ("poly", eigenvalues.real)
+
+
+def _iso_from_roots(roots: tuple, z: float) -> np.ndarray:
+    """事前計算した根から z における iso-sign 区間を求める（メモ化レベルA）。
+
+    Returns:
+        shape (n, 2) の配列 [[lower, upper], ...]
+    """
+    kind = roots[0]
+    if kind == "const":
+        n = roots[1]
+        result = np.empty((n, 2))
+        result[:, 0] = -np.inf
+        result[:, 1] = np.inf
+        return result
+
+    if kind == "linear":
+        r = roots[1]
+        result = np.empty((len(r), 2))
+        result[:, 0] = np.where(r < z, r, -np.inf)
+        result[:, 1] = np.where(r > z, r, np.inf)
+        return result
+
+    real_roots = roots[1]  # (n, d)
+    n = real_roots.shape[0]
+    result = np.empty((n, 2))
+    result[:, 0] = -np.inf
+    result[:, 1] = np.inf
 
     # z 未満の最大根 → lower bound
     below = np.where(real_roots < z - 1e-10, real_roots, np.nan)
@@ -145,6 +165,11 @@ def _batch_iso_sign_intervals(coefs: np.ndarray, z: float) -> np.ndarray:
         result[has_above, 1] = np.nanmin(above[has_above], axis=1)
 
     return result
+
+
+def _batch_iso_sign_intervals(coefs: np.ndarray, z: float) -> np.ndarray:
+    """複数の多項式の iso-sign 区間をバッチ計算する（非メモ化パス）。"""
+    return _iso_from_roots(_poly_roots(coefs), z)
 
 
 def calc_polynominal_intervals_batch(
@@ -168,13 +193,23 @@ def calc_polynominal_intervals_batch(
 
     adj_num = numerators - denominators * threshold
 
+    # メモ化が有効なら根・区間キャッシュ経由で計算（z 反復間の再計算を削減）
+    from . import poly_memo
+    if poly_memo.is_enabled() and z is not None:
+        return poly_memo.batch_intervals(denominators, adj_num, z)
+
     # 2回のバッチ計算で n 要素分をまとめて処理
     cond_intervals = _batch_iso_sign_intervals(denominators, z)  # (n, 2)
     adj_intervals  = _batch_iso_sign_intervals(adj_num, z)        # (n, 2)
 
+    return _combine_intervals(cond_intervals, adj_intervals)
+
+
+def _combine_intervals(cond_intervals: np.ndarray, adj_intervals: np.ndarray) -> list[RealSubset]:
+    """denominator 条件区間と分子区間の積集合をn要素分まとめて返す。"""
     return [
         RealSubset([cond_intervals[i].tolist()]) & RealSubset([adj_intervals[i].tolist()])
-        for i in range(len(numerators))
+        for i in range(len(cond_intervals))
     ]
 
 
@@ -322,6 +357,19 @@ def calc_polynominal_interval(
     threshold: float = 0.0,
 ) -> RealSubset:
     """有理関数 > threshold となるzの範囲を計算"""
+    from . import poly_memo
+    if poly_memo.is_enabled() and z is not None:
+        return poly_memo.scalar_interval(numerator, denominator, z, threshold)
+    return _calc_polynominal_interval(numerator, denominator, z, threshold)
+
+
+def _calc_polynominal_interval(
+    numerator: np.ndarray,
+    denominator: np.ndarray,
+    z: float,
+    threshold: float = 0.0,
+) -> RealSubset:
+    """calc_polynominal_interval の非メモ化実体。"""
     if len(numerator) < len(denominator):
         numerator = np.concatenate(
             [numerator, np.zeros(len(denominator) - len(numerator))]

@@ -151,6 +151,15 @@ class siarray(ArithmeticMixin, ComparisonMixin, IndexMixin, ArrayMixin, Reductio
 
     def forward_si(self, a: np.ndarray, b: np.ndarray, z: float):
         """アルゴリズムをRationalFunctionで実行し、制約区間を計算"""
+        from . import poly_memo
+
+        # レベルC: 新しい z が前回の最終(最小)累積区間に含まれれば、全制約が
+        # z を含むため出力・区間が一致する。アルゴリズム再実行を丸ごとスキップ。
+        if poly_memo.is_enabled() and z is not None:
+            cached = poly_memo.run_lookup(z)
+            if cached is not None:
+                return cached
+
         tracker = IntervalTracker.get_instance()
         tracker.reset()
         tracker.set_z(z)
@@ -163,6 +172,9 @@ class siarray(ArithmeticMixin, ComparisonMixin, IndexMixin, ArrayMixin, Reductio
 
         intervals = tracker.get()
         output = model.data if isinstance(model, siarray) else model
+
+        if poly_memo.is_enabled() and z is not None:
+            poly_memo.run_store(z, output, intervals)
         return output, intervals
 
     def model_selector(self, searched_model: np.ndarray | "siarray") -> bool:

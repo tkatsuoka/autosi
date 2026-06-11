@@ -3,6 +3,7 @@ import numpy as np
 from sicore import SelectiveInferenceNorm
 
 from .utils import siarray
+from . import poly_memo
 
 
 def inference(
@@ -11,8 +12,14 @@ def inference(
     var: float | np.ndarray,
     algorithm: callable,
     model: siarray = None,
+    memoize: bool = True,
     **kwargs,
 ):
+    # 多項式区間計算のメモ化のオン/オフ。p-value 毎に a, b が変わるため
+    # 前回のキャッシュが残らないよう開始時に必ずリセットする。
+    poly_memo.set_enabled(memoize)
+    poly_memo.reset()
+
     eta.add_prob_vec_nodes(prob_vec)
     eta.add_algorithm(algorithm)
 
