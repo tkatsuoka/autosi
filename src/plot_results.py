@@ -7,16 +7,20 @@
   3. fpr.pdf            : 有意水準 0.05 での誤検出率 (FPR) の棒グラフ
   4. time.pdf          : 平均計算時間の棒グラフ (対数軸)
 
-使い方:
-  python src/plot_results.py --csv result/experiment_results.csv
+使い方 (CSV 単体でもフォルダでも可。フォルダは再帰的に全 CSV を読む):
+  python src/plot_results.py --csv result/fpr_all.csv
+  python src/plot_results.py --csv result/fpr
 """
 
 import os
+import sys
 import argparse
 
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.merge_results import load_results
 
 METHODS = ["marginal_screening", "lasso", "cv_r2_lasso"]
 DATA_TYPES = ["iid", "correlated"]
@@ -127,12 +131,13 @@ def plot_time(df, outdir):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv", type=str, default="result/experiment_results.csv")
+    parser.add_argument("--csv", type=str, default="result/fpr",
+                        help="CSV ファイル、またはCSVを含むフォルダ")
     parser.add_argument("--outdir", type=str, default="result")
     parser.add_argument("--alpha", type=float, default=0.05)
     args = parser.parse_args()
 
-    df = pd.read_csv(args.csv)
+    df = load_results(args.csv)
     os.makedirs(args.outdir, exist_ok=True)
 
     plot_hist(df, args.outdir)

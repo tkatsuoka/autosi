@@ -4,16 +4,20 @@
 手法ごと・データ種別ごとに曲線を描く。Δ が大きいほど power が
 1 に近づくのが期待される挙動。
 
-使い方:
+使い方 (CSV 単体でもフォルダでも可。フォルダは再帰的に全 CSV を読む):
   python src/plot_power.py --csv result/power_results.csv
+  python src/plot_power.py --csv result/power
 """
 
 import os
+import sys
 import argparse
 
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.merge_results import load_results
 
 METHODS = ["marginal_screening", "lasso", "cv_r2_lasso"]
 DATA_TYPES = ["iid", "correlated"]
@@ -21,12 +25,13 @@ DATA_TYPES = ["iid", "correlated"]
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv", type=str, default="result/power_results.csv")
+    parser.add_argument("--csv", type=str, default="result/power",
+                        help="CSV ファイル、またはCSVを含むフォルダ")
     parser.add_argument("--outdir", type=str, default="result")
     parser.add_argument("--alpha", type=float, default=0.05)
     args = parser.parse_args()
 
-    df = pd.read_csv(args.csv)
+    df = load_results(args.csv)
     os.makedirs(args.outdir, exist_ok=True)
 
     # 各 (手法, データ種別, Δ) で power = P(p 値 < α) を集計

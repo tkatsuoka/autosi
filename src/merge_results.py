@@ -11,24 +11,30 @@ import argparse
 import pandas as pd
 
 
+def load_results(path: str) -> pd.DataFrame:
+    """CSV ファイル単体、またはフォルダ (再帰的に全 CSV) を読み込んで結合する。
+
+    描画スクリプトから「統合せずに直接フォルダを渡す」用途にも使う。
+    """
+    if os.path.isdir(path):
+        paths = sorted(glob.glob(os.path.join(path, "**", "*.csv"),
+                                 recursive=True))
+        if not paths:
+            raise SystemExit(f"no csv found under {path}")
+        return pd.concat([pd.read_csv(p) for p in paths], ignore_index=True)
+    return pd.read_csv(path)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--indir", type=str, default="result/parts")
     parser.add_argument("--out", type=str, default="result/experiment_results.csv")
     args = parser.parse_args()
 
-    # 直下とサブフォルダ (power はΔごとにサブフォルダ) を再帰的に拾う
-    paths = sorted(glob.glob(os.path.join(args.indir, "**", "*.csv"),
-                             recursive=True))
-    if not paths:
-        raise SystemExit(f"no csv found under {args.indir}")
-
-    dfs = [pd.read_csv(p) for p in paths]
-    df = pd.concat(dfs, ignore_index=True)
-
+    df = load_results(args.indir)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     df.to_csv(args.out, index=False)
-    print(f"merged {len(paths)} files, {len(df)} rows -> {args.out}")
+    print(f"merged {len(df)} rows -> {args.out}")
 
 
 if __name__ == "__main__":
