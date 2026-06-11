@@ -45,7 +45,7 @@ def _lasso_coordinate_descent(y, X, n_samples, n_features, lam, max_iter, tol):
     return coef
 
 
-def lasso(y, X, n_samples, n_features, alpha=0.1, max_iter=1000, tol=1e-4):
+def lasso(y, X, n_samples, n_features, alpha=0.1, max_iter=1000, tol=1e-5):
     """固定 λ の Lasso を解き、絶対値最大の係数に対応する eta を返す。"""
     coef = _lasso_coordinate_descent(
         y, X, n_samples, n_features, alpha, max_iter, tol
