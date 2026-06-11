@@ -15,13 +15,14 @@ siarray をプロセス間で受け渡さず各 worker 内でデータを生成�
 """
 
 import os
-
-# 並列実行時に各プロセスが BLAS スレッドを増やさないよう先に固定する。
-os.environ.setdefault("OMP_NUM_THREADS", "1")
-os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
-os.environ.setdefault("MKL_NUM_THREADS", "1")
-
 import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# numpy/BLAS より先に import して各プロセスを 1 スレッドに固定する
+# (他人のコアを奪わないため)。import 時に set_env が走る。
+from src.environment import set_env, set_seed
+
 import time
 import argparse
 import traceback
@@ -31,8 +32,6 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import autosi as si
 from src.data import generate_data
@@ -68,6 +67,9 @@ def _build_algorithm(method, X, cfg):
 def run_single(task):
     """1 試行: データ生成 -> eta 取得 -> p 値計算 (時間計測)。"""
     method, data_type, seed, cfg = task
+    # 各ワーカープロセスを 1 スレッドに固定し (他コアを奪わない)、シードを揃える
+    set_env(parallel=True)
+    set_seed(seed)
     try:
         X_np, y_np, Sigma = generate_data(
             data_type=data_type,
