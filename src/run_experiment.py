@@ -86,15 +86,24 @@ def run_single(task):
         algorithm = _build_algorithm(method, X, cfg_local)
 
         eta = algorithm(y)
+
+        oc_p = si.inference(eta=eta, prob_vec=y, var=Sigma, algorithm=algorithm, inference_mode="over_conditioning").p_value
         start = time.time()
         result = si.inference(eta=eta, prob_vec=y, var=Sigma, algorithm=algorithm)
         elapsed = time.time() - start
+
+        naive_p =  result.naive_p_value()
+        oc_p = result.oc_p_value()
+        bonferroni_p = result.bonferroni_p_value(log_num_comparisons=cfg["n_features"])
 
         return {
             "method": method,
             "data_type": data_type,
             "seed": seed,
             "p_value": float(result.p_value),
+            "oc_p_value": float(oc_p),
+            "naive_p_value": float(naive_p),
+            "bonferroni_p_value": float(bonferroni_p),
             "time": elapsed,
             "n_samples": cfg["n_samples"],
             "n_features": cfg["n_features"],
@@ -125,11 +134,11 @@ def main():
                              "手法間で異なるデータになり独立性が保てる")
     parser.add_argument("--n_samples", type=int, default=200)
     parser.add_argument("--n_features", type=int, default=10,
-                        help="特徴量数 p (論文: 10)")
+                        help="特徴量数 p")
     parser.add_argument("--signal", type=float, default=0.0,
                         help="真の係数の傾き Δ (0=null/FPR, >0=power)")
     parser.add_argument("--n_signal", type=int, default=5,
-                        help="信号を載せる先頭特徴量の数 (論文: 5)")
+                        help="信号を載せる先頭特徴量の数")
     parser.add_argument("--out", type=str, default="result/experiment_results.csv")
     # lasso / cv 共通ハイパラ
     parser.add_argument("--alpha", type=float, default=0.1)

@@ -114,13 +114,7 @@ uv run python src/plot_results.py --csv result/fpr/lasso_iid
 | n_signal | 信号を載せた特徴量数 |
 
 ## 論文設定との対応
-
-Shiraishi et al. (2023) の SFS (selective z-test) に合わせて既定値を設定済み:
-
 - 特徴量数 p = 10（`--n_features` 既定 10）
 - 信号特徴量数 = 5（`--n_signal` 既定 5、β の先頭5要素を Δ）
 - FPR: n ∈ {100, 200, 300, 400}（`synthetic_fpr.sh -N`）
 - power: Δ ∈ {0.1, 0.2, 0.3, 0.4}, n = 200 固定（`--n_samples` 既定 200）
-
-注: 選択アルゴリズム自体は論文の forward stepwise (K=5) ではなく、本実験の
-3手法（各 1 変数を選択）である点が論文と異なる。データ生成設定のみ論文準拠。

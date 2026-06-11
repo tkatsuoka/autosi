@@ -45,7 +45,7 @@ def _lasso_coordinate_descent(y, X, n_samples, n_features, lam, max_iter, tol):
     return coef
 
 
-def lasso(y, X, n_samples, n_features, alpha=0.1, max_iter=1000, tol=1e-5):
+def lasso(y, X, n_samples, n_features, alpha=0.1, max_iter=1000, tol=1e-4):
     """固定 λ の Lasso を解き、絶対値最大の係数に対応する eta を返す。"""
     coef = _lasso_coordinate_descent(
         y, X, n_samples, n_features, alpha, max_iter, tol
@@ -64,7 +64,7 @@ def cv_r2_lasso(
     lambda_grid,
     K=3,
     max_iter=1000,
-    tol=1e-5,
+    tol=1e-4,
 ):
     """K-fold CV の R^2 で λ を選択し、その Lasso で変数選択した eta を返す。"""
 

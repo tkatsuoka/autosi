@@ -13,12 +13,12 @@ import autosi as si
 
 rng = np.random.default_rng(0)
 
-n_samples = 1000
-n_features = 5
+n_samples = 100
+n_features = 10
 K = 3
 lambda_grid = np.logspace(-4, 0, 10)
 max_iter = 1000
-tol = 1e-5
+tol = 1e-4
 
 beta = np.zeros(n_features)
 X_np = rng.normal(0, 1, (n_samples, n_features))
@@ -63,7 +63,6 @@ def cv_r2_lasso(y):
             lv = lam / n_tr
             coef = si.array(np.zeros(n_features))
             for _ in range(max_iter):
-                print("iter", _ + 1)
                 coef_old = coef.copy()
                 for j in range(n_features):
                     r_j = y_tr - X_tr @ coef + X_tr[:, j] * coef[j]  # 部分残差
@@ -85,7 +84,6 @@ def cv_r2_lasso(y):
             # print(ss_res.deg, ss_tot.deg)
             # print((ss_res / ss_tot).deg)
             fold_r2 = fold_r2 + 1.0 - ss_res / ss_tot
-            print(fold_r2.deg)
         cv_r2.append(fold_r2 / K)
 
     # -----------------------------------------------------------------------
@@ -124,6 +122,7 @@ def cv_r2_lasso(y):
     # 絶対値最大の係数に対応する変数のコントラストベクトル η を返す
     idx = si.argsort(si.abs(coef))[-1]
     eta = (X.T @ X).inv() @ X.T
+    print('idx:', idx)
     return eta[idx]
 
 
