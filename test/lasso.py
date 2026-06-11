@@ -15,7 +15,6 @@ def lasso(y):
     max_iter = 1000
     tol = 1e-4
     coef = si.array(np.zeros(n_features))
-    print(1)
 
     for iteration in range(max_iter):
         coef_old = coef.copy()
@@ -40,9 +39,7 @@ def lasso(y):
             # print("iter", iteration + 1)
             break
 
-    print(2)
     idx = si.argsort(si.abs(coef))[-1]
-    print(3)
     eta = (X_train.T @ X_train).inv() @ X_train.T
     return eta[idx]
 
