@@ -13,12 +13,12 @@ import autosi as si
 
 rng = np.random.default_rng(0)
 
-n_samples = 100
-n_features = 10
+n_samples = 1000
+n_features = 5
 K = 3
 lambda_grid = np.logspace(-4, 0, 10)
 max_iter = 1000
-tol = 1e-4
+tol = 1e-5
 
 beta = np.zeros(n_features)
 X_np = rng.normal(0, 1, (n_samples, n_features))
@@ -63,6 +63,7 @@ def cv_r2_lasso(y):
             lv = lam / n_tr
             coef = si.array(np.zeros(n_features))
             for _ in range(max_iter):
+                print("iter", _ + 1)
                 coef_old = coef.copy()
                 for j in range(n_features):
                     r_j = y_tr - X_tr @ coef + X_tr[:, j] * coef[j]  # 部分残差
@@ -131,7 +132,11 @@ def cv_r2_lasso(y):
 # ============================================================================
 
 eta = cv_r2_lasso(y)
-result = si.inference(eta=eta, prob_vec=y, var=1.0, algorithm=cv_r2_lasso)
+import time
+start_time = time.time()
+result = si.inference(eta=eta, prob_vec=y, var=1.0, algorithm=cv_r2_lasso, memoize=True)
+end_time = time.time()
+print(f"Inference completed in {end_time - start_time:.2f} seconds")
 print(f"p-value: {result.p_value}")
 
 

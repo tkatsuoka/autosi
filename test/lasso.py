@@ -15,10 +15,11 @@ def lasso(y):
     max_iter = 1000
     tol = 1e-4
     coef = si.array(np.zeros(n_features))
+    print(1)
 
     for iteration in range(max_iter):
         coef_old = coef.copy()
-
+        print(f"Iteration: {iteration + 1}")
         for j in range(n_features):
             y_pred = X_train @ coef
 
@@ -39,7 +40,9 @@ def lasso(y):
             # print("iter", iteration + 1)
             break
 
+    print(2)
     idx = si.argsort(si.abs(coef))[-1]
+    print(3)
     eta = (X_train.T @ X_train).inv() @ X_train.T
     return eta[idx]
 
@@ -68,33 +71,33 @@ if __name__ == "__main__":
     result = si.inference(eta=eta, prob_vec=y_train, var=1.0, algorithm=lasso)
     print(f"p-value: {result.p_value}")
 
-    p_values = []
+    # p_values = []
 
-    for i in range(1000):
-        n_samples = 100
-        n_features = 10
+    # for i in range(1000):
+    #     n_samples = 100
+    #     n_features = 10
 
-        beta = np.zeros(n_features)
-        X = np.random.randn(n_samples, n_features)
-        y = X @ beta + rng.normal(0, 1, n_samples)
+    #     beta = np.zeros(n_features)
+    #     X = np.random.randn(n_samples, n_features)
+    #     y = X @ beta + rng.normal(0, 1, n_samples)
 
-        y = si.siarray(y)
-        X = si.siarray(X)
+    #     y = si.siarray(y)
+    #     X = si.siarray(X)
 
-        # 訓練データとテストデータに分割
-        split_idx = int(0.8 * n_samples)
-        X_train = X[:split_idx]
-        X_test = X[split_idx:]
-        y_train = y[:split_idx]
-        y_test = y[split_idx:]
+    #     # 訓練データとテストデータに分割
+    #     split_idx = int(0.8 * n_samples)
+    #     X_train = X[:split_idx]
+    #     X_test = X[split_idx:]
+    #     y_train = y[:split_idx]
+    #     y_test = y[split_idx:]
 
-        eta = lasso(y_train)
-        result = si.inference(eta=eta, prob_vec=y_train, var=1.0, algorithm=lasso)
-        p_values.append(result.p_value)
-        print(f"Iteration {i + 1}, p-value: {result.p_value}")
+    #     eta = lasso(y_train)
+    #     result = si.inference(eta=eta, prob_vec=y_train, var=1.0, algorithm=lasso)
+    #     p_values.append(result.p_value)
+    #     print(f"Iteration {i + 1}, p-value: {result.p_value}")
 
-    import matplotlib.pyplot as plt
-    plt.hist(p_values, bins=20, range=(0, 1))
-    plt.xlabel("p-value")
-    plt.ylabel("Frequency")
-    plt.savefig("result/lasso_p_values_hist.pdf")
+    # import matplotlib.pyplot as plt
+    # plt.hist(p_values, bins=20, range=(0, 1))
+    # plt.xlabel("p-value")
+    # plt.ylabel("Frequency")
+    # plt.savefig("result/lasso_p_values_hist.pdf")
