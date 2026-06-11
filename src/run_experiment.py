@@ -93,7 +93,6 @@ def run_single(task):
         elapsed = time.time() - start
 
         naive_p =  result.naive_p_value()
-        oc_p = result.oc_p_value()
         bonferroni_p = result.bonferroni_p_value(log_num_comparisons=cfg["n_features"])
 
         return {
