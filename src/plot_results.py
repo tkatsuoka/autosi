@@ -51,7 +51,7 @@ def plot_one(sub, method, data_type, alpha, outdir):
     ax.set_xlabel("number of samples n")
     ax.set_ylabel("type I error rate")
     ax.set_title(f"{method} ({data_type})")
-    ax.set_ylim(0, max(2 * alpha, 0.11))
+    ax.set_ylim(0, 1.0)
     ax.grid(alpha=0.3)
     ax.legend()
     fig.tight_layout()
