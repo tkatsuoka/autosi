@@ -58,7 +58,7 @@ for sig in $SIGNALS; do
               --signal $sig --n_signal $N_SIGNAL \
               --seed_start $s --seed_end $e --seed_offset $OFFSET --workers $WORKERS \
               --out $OUTDIR/part_${i}.csv"
-        qsub -q "$QUEUE" -l select=1:ncpus=${WORKERS}:mem=96gb -l walltime=24:00:00 \
+        qsub -q "$QUEUE" -l select=1:ncpus=${WORKERS}:mem=256gb -l walltime=72:00:00 \
              -v MYARGS="$args" "$0"
     done
 done

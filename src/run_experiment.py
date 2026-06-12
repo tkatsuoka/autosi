@@ -131,7 +131,7 @@ def main():
     parser.add_argument("--seed_offset", type=int, default=0,
                         help="全 seed に加える定数。手法ごとに変えると "
                              "手法間で異なるデータになり独立性が保てる")
-    parser.add_argument("--n_samples", type=int, default=200)
+    parser.add_argument("--n_samples", type=int, default=400)
     parser.add_argument("--n_features", type=int, default=10,
                         help="特徴量数 p")
     parser.add_argument("--signal", type=float, default=0.0,
