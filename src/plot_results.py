@@ -22,14 +22,31 @@ from src.merge_results import load_results
 def plot_one(sub, method, data_type, alpha, outdir):
     """(手法, データ種別) 1 組の FPR 折れ線グラフ (横軸 n, 線 1 本) を描く。"""
     # サンプル数ごとに type I error rate = P(p 値 < α) を集計
-    rate = (
-        sub.assign(reject=sub.p_value < alpha)
-        .groupby("n_samples")["reject"].mean()
-        .sort_index()
-    )
+    p_cols = {
+        "p_value": "proposed",
+        "oc_p_value": "o/w-pp",
+        "naive_p_value": "naive",
+        "bonferroni_p_value": "bonferroni"
+    }
 
-    fig, ax = plt.subplots(figsize=(6, 5))
-    ax.plot(rate.index, rate.values, marker="o", color="C0")
+    fig, ax = plt.subplots(figsize=(7, 5)) # 凡例スペースのために少し横幅を広げています
+
+    # カラーサイクルのインデックス用
+    for i, (col, label) in enumerate(p_cols.items()):
+        # データに該当する列が存在しない場合の安全対策
+        if col not in sub.columns:
+            continue
+            
+        # 各 p 値ごとに type I error rate = P(p 値 < α) を集計
+        rate = (
+            sub.assign(reject=sub[col] < alpha)
+            .groupby("n_samples")["reject"].mean()
+            .sort_index()
+        )
+        
+        # 折れ線を描画 (C0, C1, C2... と自動で色が変わります)
+        ax.plot(rate.index, rate.values, marker="o", color=f"C{i}", label=label)
+
     ax.axhline(alpha, color="gray", ls="--", lw=1, label=f"alpha={alpha}")
     ax.set_xlabel("number of samples n")
     ax.set_ylabel("type I error rate")
