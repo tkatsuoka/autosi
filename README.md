@@ -14,7 +14,10 @@ CSV に保存して表・グラフを生成する。
 
 ```
 src/
-├── pbs_lib.sh               PBS共通ヘルパ (同時実行上限の自動検出・-v受け渡し)
+├── pbs_common.sh            投入スクリプト共通の設定・ヘルパ (ドライバから source)
+├── jobs/                    PBS ジョブ本体 (spool 実行のため source しない)
+│   ├── synthetic.pbs        run_experiment.py を MYARGS で実行
+│   └── realdata.pbs         run_realdata.py を MYARGS で実行
 ├── common/                  実験共通モジュール
 │   ├── environment.py       スレッド数=1 固定・シード設定 (他コアを奪わない)
 │   ├── methods.py           3手法の SI アルゴリズム (sklearn 規約の Lasso)
@@ -22,15 +25,15 @@ src/
 ├── synthetic/               合成データ実験
 │   ├── data.py              データ生成 (iid / corr, null / power)
 │   ├── run_experiment.py    1ジョブ分の計算本体 (p値と計算時間を CSV 出力)
-│   ├── fpr.sh               FPR実験ランチャ兼ジョブ本体 (サンプル数 n を振る)
-│   ├── power.sh             power実験ランチャ兼ジョブ本体 (信号Δ を振る)
+│   ├── fpr.sh               FPR実験ドライバ (サンプル数 n を振る)
+│   ├── power.sh             power実験ドライバ (信号Δ を振る)
 │   ├── plot_fpr.py          FPR の折れ線グラフ (横軸=サンプル数)
 │   └── plot_power.py        power の折れ線グラフ (横軸=Δ)
 └── realdata/                実データ実験
     ├── datasets.py          UCI 8データセットの取得・整形 (data/realdata/ にキャッシュ)
     ├── run_realdata.py      1ジョブ分の計算本体 (サブサンプリング -> p値)
-    ├── realdata.sh          実データ実験ランチャ兼ジョブ本体
-    └── plot_realdata.py     棄却率の表 (論文 Table 1 形式: proposed/oc)
+    ├── realdata.sh          実データ実験ドライバ
+    └── plot_realdata.py     棄却率の表 (論文 Table 1 形式: proposed/oc/ds)
 ```
 
 旧ファイルからの移動対応: `src/synthetic_fpr.sh` → `src/synthetic/fpr.sh`、
@@ -70,14 +73,17 @@ uv が extras を外して環境を再同期してしまい pandas 等が消え�
   同じ n 行を前半/後半に2分割し、前半で同じアルゴリズムにより特徴選択、
   後半 (選択と独立) で古典的 z 検定を行う (使用データ量をフェアに揃える)
 
-## 合成データ実験
+## PBS への投入方式 (共通)
 
-ランチャは計算せず `qsub` を投げるだけなので、ログインノードで実行してよい。
-全作業（条件 × 分割）は **1 本の PBS ジョブ配列** (`qsub -J`) として投入し、
-同時に走る本数だけをキューの同時実行上限に合わせて絞る。上限は既定で
-`qstat -Qf <キュー>` から自動検出し (`max_run` / `max_user_run`)、
-`-J 0-(N-1)%上限` の形で throttle する。自動検出できない場合は throttle を
-付けず、キュー設定の上限にそのまま従う。`-j` で明示指定して上書きもできる。
+ドライバ (`fpr.sh` / `power.sh` / `realdata.sh`) は計算せず `qsub` を
+投げるだけなので、ログインノードで実行してよい。全作業（条件 × 分割）を
+**1 ジョブずつ** `qsub -N <名前> -o eo -e eo -v MYARGS="..." src/jobs/*.pbs`
+の形で投入する。キュー・ワーカー数・eo/ の場所などの共通設定は
+`src/pbs_common.sh` に集約してある。ジョブ本体 (`src/jobs/*.pbs`) は
+spool 実行されるため、`PBS_O_WORKDIR` 起点で `.venv/bin/python3` を
+直接呼び、`MYARGS` を Python スクリプトへそのまま渡す。
+
+## 合成データ実験
 
 ### FPR (type I error rate)
 
@@ -95,11 +101,10 @@ bash src/synthetic/fpr.sh -m cv_r2_lasso        -d iid
 | `-m` | 手法 (marginal_screening / lasso / cv_r2_lasso) | lasso |
 | `-d` | データ種別 (iid / corr) | iid |
 | `-N` | サンプル数のリスト (横軸) | "100 200 300 400" |
-| `-n` | 分割数 (サンプル数ごとの作業単位数) | 10 |
-| `-p` | 1作業単位が計算する p 値の個数 (エラー時の不足に備え 1 割の余裕) | 1100 |
-| `-w` | 1作業単位内の並列ワーカー数 | 96 |
+| `-n` | 分割数 (サンプル数ごとのジョブ数) | 10 |
+| `-p` | 1ジョブが計算する p 値の個数 (エラー時の不足に備え 1 割の余裕) | 1100 |
+| `-w` | 1ジョブ内の並列ワーカー数 | 96 |
 | `-q` | キュー名 | cpu-large |
-| `-j` | 同時実行上限 (空=キュー設定から自動検出) | (自動検出) |
 
 ### power (検出力)
 
@@ -185,7 +190,7 @@ si4pipeline 論文の実データ実験に準拠。UCI の 8 データセット
 # 1. データセットの取得 (初回のみ・要ネットワーク。data/realdata/ にキャッシュ)
 uv run --extra experiments python src/realdata/datasets.py
 
-# 2. 実験の投入 (ランチャが手順1も自動実行する)
+# 2. 実験の投入 (ドライバが手順1も自動実行する)
 bash src/realdata/realdata.sh -m lasso
 bash src/realdata/realdata.sh -m marginal_screening
 bash src/realdata/realdata.sh -m cv_r2_lasso
@@ -201,11 +206,10 @@ uv run --extra experiments python src/realdata/plot_realdata.py --csv result/rea
 | `-m` | 手法 (marginal_screening / lasso / cv_r2_lasso) | lasso |
 | `-D` | データセットのリスト | 全8種 |
 | `-N` | サブサンプルのサイズ n のリスト | "100 150 200" |
-| `-n` | 分割数 ((データセット, n) ごとの作業単位数) | 10 |
-| `-p` | 1作業単位が計算する p 値の個数 (10 分割 × 110 = 1100 試行) | 110 |
-| `-w` | 1作業単位内の並列ワーカー数 | 96 |
+| `-n` | 分割数 ((データセット, n) ごとのジョブ数) | 10 |
+| `-p` | 1ジョブが計算する p 値の個数 (10 分割 × 110 = 1100 試行) | 110 |
+| `-w` | 1ジョブ内の並列ワーカー数 | 96 |
 | `-q` | キュー名 | cpu-large |
-| `-j` | 同時実行上限 (空=キュー設定から自動検出) | (自動検出) |
 
 ローカルで直接実行する場合 (オプションは `run_experiment.py` とほぼ共通、
 `--data_types` の代わりに `--datasets`、`--signal` 系はなし):
@@ -260,11 +264,12 @@ seed 順の先頭から揃えられる (既定は全件)。
 ## 進捗確認・トラブルシュート
 
 ```bash
-qstat -u $USER            # 自分のジョブ状況 (配列ジョブは親 1 行で表示される)
-qstat -t 62637[]          # 配列ジョブの subjob ごとの状態を表示
-ls eo/                    # PBS の標準出力/エラーログ (subjob ごとに 1 ファイル)
+qstat -u $USER            # 自分のジョブ状況 (ジョブ名で条件が分かる)
+ls eo/                    # PBS の標準出力/エラーログ (ジョブごとに 1 ファイル)
 ```
 
-subjob がすぐ終わる・結果 CSV ができない場合は `eo/` のログを確認する。
-Python の import エラーが出ている場合は `uv sync --extra experiments`
-を実行し直してから再投入する。
+結果 CSV は各ジョブが全試行を計算し終えた時点で書かれる (lasso で数十分〜)。
+ログ (eo/) も多くの PBS 設定ではジョブ終了時にコピーされるため、
+走行中の生死確認は `qstat` を使う。ジョブがすぐ終わる・結果 CSV が
+できない場合は `eo/<ジョブ名>.o<ID>` を確認する。Python の import エラーが
+出ている場合は `uv sync --extra experiments` を実行し直してから再投入する。

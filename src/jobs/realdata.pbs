@@ -1,0 +1,26 @@
+#!/bin/bash
+# 実データ実験 (src/realdata/run_realdata.py) の PBS ジョブ本体。
+# 引数は環境変数 MYARGS で受け取る (qsub -v MYARGS="..." で投入)。
+# spool 実行されるため、リポジトリ内のパスは PBS_O_WORKDIR 起点で解決する。
+# データセットはドライバがログインノードで取得済み (計算ノードはキャッシュ参照のみ)。
+#PBS -q cpu-large
+#PBS -l select=1:ncpus=96:mem=96gb
+#PBS -l walltime=72:00:00
+
+set -euo pipefail
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+
+: "${MYARGS:?MYARGS が指定されていません (qsub -v MYARGS=\"...\" で投入する)}"
+
+cd "$PBS_O_WORKDIR"
+
+# uv sync --extra experiments 済みの venv を直接使う
+# (uv run は extras を外して再同期してしまうため使わない)
+PYTHON=".venv/bin/python3"
+if [ ! -x "$PYTHON" ]; then
+    echo "エラー: $PYTHON がありません。先に uv sync --extra experiments を実行してください。" >&2
+    exit 1
+fi
+
+# MYARGS は空白区切りの引数列なのでクォートせず展開する
+$PYTHON src/realdata/run_realdata.py $MYARGS
