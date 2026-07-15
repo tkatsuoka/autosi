@@ -1,5 +1,5 @@
 """marginal screening / lasso / cv_r2_lasso の 3 手法を
-iid・correlated データで実行し、p 値と計算時間を CSV に出力する。
+iid・corr データで実行し、p 値と計算時間を CSV に出力する。
 
 各反復で
   1. データ生成 (null: signal=0)
@@ -31,6 +31,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 from tqdm import tqdm
 
 import autosi as si
@@ -38,7 +39,7 @@ from src.synthetic.data import generate_data
 from src.common.methods import marginal_screening, lasso, cv_r2_lasso
 
 METHODS = ["marginal_screening", "lasso", "cv_r2_lasso"]
-DATA_TYPES = ["iid", "correlated"]
+DATA_TYPES = ["iid", "corr"]
 
 
 def _build_algorithm(method, X, cfg):
@@ -62,6 +63,39 @@ def _build_algorithm(method, X, cfg):
             K=cfg["K"], max_iter=cfg["max_iter"], tol=cfg["tol"],
         )
     raise ValueError(f"unknown method: {method}")
+
+
+def _data_split_p_value(method, X_np, y_np, Sigma, cfg):
+    """データ分割法 (比較手法): 前半で特徴選択し、後半で古典的 z 検定を行う。
+
+    他手法と同じ n 行を半分ずつ選択と推論に使うため、データ量はフェア。
+    推論半分は選択と独立なので通常の z 検定で valid になる
+    (corr ノイズでは分割間に相関が残るため厳密には近似)。
+
+    Returns
+    -------
+    (p_value, selected_index)
+    """
+    n = X_np.shape[0]
+    n1 = n // 2
+    X1_np, X2_np = X_np[:n1], X_np[n1:]
+    y1_np, y2_np = y_np[:n1], y_np[n1:]
+
+    # 前半: 他手法と同じアルゴリズムを 1 回だけ実行して特徴を選ぶ
+    X1 = si.siarray(X1_np)
+    algorithm = _build_algorithm(method, X1, cfg)
+    eta1 = algorithm(si.siarray(y1_np))
+    selected = int(np.argmax(eta1.data @ X1_np))
+
+    # 後半: 選択に使っていないデータで OLS 係数の z 検定
+    eta2 = np.linalg.solve(X2_np.T @ X2_np, X2_np.T)[selected]
+    stat = float(eta2 @ y2_np)
+    if np.isscalar(Sigma):
+        var_stat = float(Sigma) * float(eta2 @ eta2)
+    else:
+        var_stat = float(eta2 @ Sigma[n1:, n1:] @ eta2)
+    p_value = float(2.0 * norm.sf(abs(stat) / np.sqrt(var_stat)))
+    return p_value, selected
 
 
 def run_single(task):
@@ -107,6 +141,13 @@ def run_single(task):
             log_num_comparisons=cfg["n_features"] * np.log(2)
         )
 
+        # データ分割法 (比較手法)。前半だけで選ぶため選択結果は proposed と
+        # 異なり得るので、power の条件付け用に is_signal も別途記録する。
+        ds_p, ds_selected = _data_split_p_value(
+            method, X_np, y_np, Sigma, cfg_local
+        )
+        ds_is_signal = bool(ds_selected < n_active)
+
         return {
             "method": method,
             "data_type": data_type,
@@ -123,6 +164,10 @@ def run_single(task):
             # power を「実際に信号が載った特徴量が選ばれた試行」のみで測るための情報
             "selected_index": selected_index,
             "is_signal": is_signal,
+            # データ分割法の結果 (選択は前半のみで行うため別に記録)
+            "ds_p_value": ds_p,
+            "ds_selected_index": ds_selected,
+            "ds_is_signal": ds_is_signal,
         }
     except Exception:
         # 1 試行の失敗 (数値誤差など) で全体を止めない。ログを残して次へ進む。
@@ -245,6 +290,7 @@ def main():
             n=("p_value", "size"),
             mean_p=("p_value", "mean"),
             fpr_005=("p_value", lambda s: float((s < 0.05).mean())),
+            ds_005=("ds_p_value", lambda s: float((s < 0.05).mean())),
             # power 実験で「信号特徴量が選ばれた試行」の割合 (null では常に 0)
             signal_rate=("is_signal", "mean"),
             mean_time=("time", "mean"),

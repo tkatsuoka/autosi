@@ -84,7 +84,7 @@ p 値計算の経路上にある。
 | ファイル | 責務 |
 |----------|------|
 | [`methods.py`](src/methods.py) | 3 手法（marginal screening / lasso / cv_r2_lasso）の SI アルゴリズム |
-| [`data.py`](src/data.py) | 実験データ生成（iid / correlated、null / signal） |
+| [`data.py`](src/synthetic/data.py) | 実験データ生成（iid / corr、null / signal） |
 | [`run_experiment.py`](src/run_experiment.py) | 1 ジョブ分の計算本体（p 値・計算時間を CSV 出力） |
 | [`environment.py`](src/environment.py) | BLAS スレッド数固定・乱数シード設定 |
 | [`plot_results.py`](src/plot_results.py) / [`plot_power.py`](src/plot_power.py) | 結果のグラフ生成 |

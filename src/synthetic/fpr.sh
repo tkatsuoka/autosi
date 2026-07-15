@@ -6,7 +6,7 @@
 #
 # サンプル数 n を振り (横軸)、各 n で type I error rate を測る。
 #
-# 同時実行本数は cpu-medium の設定 (ユーザーあたり同時実行上限) に合わせて絞る。
+# 同時実行本数はキューの設定 (ユーザーあたり同時実行上限) に合わせて絞る。
 #   - 既定: qstat からキュー設定の上限を自動検出し、-J 0-(TOTAL-1)%上限 で投入
 #   - 自動検出できなければ %throttle を付けず、キュー設定の上限にそのまま従う
 #   - -j で上限を明示指定して上書きも可能
@@ -31,13 +31,20 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 #   k = ns_index * NSPLIT + i
 if [ -n "${PBS_ARRAY_INDEX:-}" ]; then
     cd "$PBS_O_WORKDIR"
+    # 計算ノードでは uv を使わず、uv sync --extra experiments 済みの
+    # venv の python を直接使う (uv run は extras を外して再同期してしまう)
+    PYTHON="$PBS_O_WORKDIR/.venv/bin/python3"
+    if [ ! -x "$PYTHON" ]; then
+        echo "エラー: $PYTHON がありません。先に uv sync --extra experiments を実行してください。" >&2
+        exit 1
+    fi
     read -ra NS_ARR <<< "${NSAMPLES//:/ }"          # ':' 符号化を復号
     ns=${NS_ARR[$(( PBS_ARRAY_INDEX / NSPLIT ))]}
     i=$(( PBS_ARRAY_INDEX % NSPLIT ))
     s=$(( i * PER )); e=$(( (i + 1) * PER ))
     OUTDIR=result/fpr/${METHOD}_${DATA_TYPE}/n${ns}
     mkdir -p "$OUTDIR"
-    uv run python src/synthetic/run_experiment.py \
+    "$PYTHON" src/synthetic/run_experiment.py \
         --methods "$METHOD" --data_types "$DATA_TYPE" --signal 0.0 \
         --n_samples "$ns" --seed_start "$s" --seed_end "$e" --seed_offset "$OFFSET" \
         --workers "$WORKERS" --out "$OUTDIR/part_${i}.csv"
@@ -47,13 +54,18 @@ fi
 # --- ランチャ: 全作業を 1 本のジョブ配列として投入 ---
 source "$(dirname "$0")/../pbs_lib.sh"
 
+# PBS ログ (標準出力/エラー) の出力先を用意する
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+EO_DIR="$PROJECT_DIR/eo"
+mkdir -p "$EO_DIR"
+
 METHOD=lasso
 DATA_TYPE=iid
 NSAMPLES="100 200 300 400"   # 横軸となるサンプル数のリスト
 NSPLIT=10                    # サンプル数ごとの作業単位数 (= 分割数)
 PER=1100                     # 1 作業単位が計算する p 値の個数 (エラー時の不足に備え 1 割の余裕)
 WORKERS=96
-QUEUE=cpu-medium
+QUEUE=cpu-large
 THROTTLE=""                  # -j: 空ならキュー設定から自動検出
 
 while getopts "m:d:N:n:p:w:q:j:" o; do case $o in
@@ -90,9 +102,9 @@ for ns in "${NS_ARR[@]}"; do mkdir -p "result/fpr/${METHOD}_${DATA_TYPE}/n${ns}"
 # subjob へ渡す設定 (リストは ':' 符号化して空白問題を回避)
 VLIST="METHOD=${METHOD},DATA_TYPE=${DATA_TYPE},NSAMPLES=$(encode_list "$NSAMPLES"),NSPLIT=${NSPLIT},PER=${PER},WORKERS=${WORKERS},OFFSET=${OFFSET}"
 
-qsub -q "$QUEUE" -J "$RANGE" \
+qsub -q "$QUEUE" -J "$RANGE" -o "$EO_DIR/" \
      -l select=1:ncpus=${WORKERS}:mem=96gb -l walltime=24:00:00 \
      -v "$VLIST" "$0"
 
-echo "投入完了 -> result/fpr/${METHOD}_${DATA_TYPE}/ 以下。完了後:"
-echo "  uv run python src/synthetic/plot_fpr.py --csv result/fpr/${METHOD}_${DATA_TYPE}"
+echo "投入完了 -> result/fpr/${METHOD}_${DATA_TYPE}/ 以下 (PBS ログは eo/)。完了後:"
+echo "  uv run --extra experiments python src/synthetic/plot_fpr.py --csv result/fpr/${METHOD}_${DATA_TYPE}"

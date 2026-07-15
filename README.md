@@ -20,7 +20,7 @@ src/
 │   ├── methods.py           3手法の SI アルゴリズム (sklearn 規約の Lasso)
 │   └── merge_results.py     分割CSVの統合・読み込みヘルパ
 ├── synthetic/               合成データ実験
-│   ├── data.py              データ生成 (iid / correlated, null / power)
+│   ├── data.py              データ生成 (iid / corr, null / power)
 │   ├── run_experiment.py    1ジョブ分の計算本体 (p値と計算時間を CSV 出力)
 │   ├── fpr.sh               FPR実験ランチャ兼ジョブ本体 (サンプル数 n を振る)
 │   ├── power.sh             power実験ランチャ兼ジョブ本体 (信号Δ を振る)
@@ -48,6 +48,12 @@ uv sync --extra experiments
 `experiments` エクストラには pandas / matplotlib / tqdm に加えて、
 実データ実験の UCI Excel ファイル変換用に openpyxl / xlrd が含まれる。
 
+**注意**: `uv run python ...` を `--extra experiments` なしで実行すると、
+uv が extras を外して環境を再同期してしまい pandas 等が消える。
+手動実行時は必ず `uv run --extra experiments python ...` とするか、
+`.venv/bin/python3` を直接使うこと。PBS の subjob は uv を経由せず
+`.venv/bin/python3` を直接使う (計算ノードでの再同期・競合を避けるため)。
+
 ## 実験設定 (既定値)
 
 - 特徴量数 p = 20（`--n_features` 既定 20）
@@ -60,6 +66,9 @@ uv sync --extra experiments
   (`is_signal` 列で判定。null 特徴量の棄却は type I error なので分母からも除外)
 - 1 試行が数値誤差などで失敗した場合はスキップして次の試行へ続行し、
   失敗件数をログに出す。既定の `-p` は不足に備えて 1 割多めにしてある
+- 比較手法としてデータ分割法 (`ds_p_value`) も毎試行計算する。他手法と
+  同じ n 行を前半/後半に2分割し、前半で同じアルゴリズムにより特徴選択、
+  後半 (選択と独立) で古典的 z 検定を行う (使用データ量をフェアに揃える)
 
 ## 合成データ実験
 
@@ -84,12 +93,12 @@ bash src/synthetic/fpr.sh -m cv_r2_lasso        -d iid
 | フラグ | 意味 | 既定 |
 |--------|------|------|
 | `-m` | 手法 (marginal_screening / lasso / cv_r2_lasso) | lasso |
-| `-d` | データ種別 (iid / correlated) | iid |
+| `-d` | データ種別 (iid / corr) | iid |
 | `-N` | サンプル数のリスト (横軸) | "100 200 300 400" |
 | `-n` | 分割数 (サンプル数ごとの作業単位数) | 10 |
 | `-p` | 1作業単位が計算する p 値の個数 (エラー時の不足に備え 1 割の余裕) | 1100 |
 | `-w` | 1作業単位内の並列ワーカー数 | 96 |
-| `-q` | キュー名 | cpu-medium |
+| `-q` | キュー名 | cpu-large |
 | `-j` | 同時実行上限 (空=キュー設定から自動検出) | (自動検出) |
 
 ### power (検出力)
@@ -113,7 +122,7 @@ bash src/synthetic/power.sh -m cv_r2_lasso        -d iid
 ### ローカルで直接実行する場合
 
 ```bash
-uv run python src/synthetic/run_experiment.py --iter 10 --methods lasso \
+uv run --extra experiments python src/synthetic/run_experiment.py --iter 10 --methods lasso \
     --data_types iid --signal 0.2 --out result/local_test.csv
 ```
 
@@ -130,14 +139,16 @@ uv run python src/synthetic/run_experiment.py --iter 10 --methods lasso \
 (手法 × データ種別) の組ごとに別ファイルで折れ線グラフを出力する。
 
 ```bash
-# FPR: result/fpr_<method>_<data_type>.pdf (proposed/oc/naive/bonferroni の4本)
-uv run python src/synthetic/plot_fpr.py --csv result/fpr
+# FPR: result/fpr_<method>_<data_type>.pdf
+#      (proposed/oc/naive/bonferroni/data splitting の5本)
+uv run --extra experiments python src/synthetic/plot_fpr.py --csv result/fpr
 
-# power: result/power_<method>_<data_type>.pdf (is_signal 試行のみで算出)
-uv run python src/synthetic/plot_power.py --csv result/power
+# power: result/power_<method>_<data_type>.pdf
+#        (proposed と data splitting の2本。各自の信号選択試行のみで算出)
+uv run --extra experiments python src/synthetic/plot_power.py --csv result/power
 
 # 使用する p 値の個数を条件ごとに 1000 件に揃える場合
-uv run python src/synthetic/plot_fpr.py --csv result/fpr --n_pvalues 1000
+uv run --extra experiments python src/synthetic/plot_fpr.py --csv result/fpr --n_pvalues 1000
 ```
 
 共通オプション: `--alpha` 有意水準 (既定 0.05) / `--n_pvalues` 各条件で
@@ -172,7 +183,7 @@ si4pipeline 論文の実データ実験に準拠。UCI の 8 データセット
 
 ```bash
 # 1. データセットの取得 (初回のみ・要ネットワーク。data/realdata/ にキャッシュ)
-uv run python src/realdata/datasets.py
+uv run --extra experiments python src/realdata/datasets.py
 
 # 2. 実験の投入 (ランチャが手順1も自動実行する)
 bash src/realdata/realdata.sh -m lasso
@@ -180,7 +191,7 @@ bash src/realdata/realdata.sh -m marginal_screening
 bash src/realdata/realdata.sh -m cv_r2_lasso
 
 # 3. 集計 (全ジョブ完了後)
-uv run python src/realdata/plot_realdata.py --csv result/realdata
+uv run --extra experiments python src/realdata/plot_realdata.py --csv result/realdata
 ```
 
 `realdata.sh` のオプション:
@@ -193,21 +204,21 @@ uv run python src/realdata/plot_realdata.py --csv result/realdata
 | `-n` | 分割数 ((データセット, n) ごとの作業単位数) | 10 |
 | `-p` | 1作業単位が計算する p 値の個数 (10 分割 × 110 = 1100 試行) | 110 |
 | `-w` | 1作業単位内の並列ワーカー数 | 96 |
-| `-q` | キュー名 | cpu-medium |
+| `-q` | キュー名 | cpu-large |
 | `-j` | 同時実行上限 (空=キュー設定から自動検出) | (自動検出) |
 
 ローカルで直接実行する場合 (オプションは `run_experiment.py` とほぼ共通、
 `--data_types` の代わりに `--datasets`、`--signal` 系はなし):
 
 ```bash
-uv run python src/realdata/run_realdata.py --iter 10 --methods lasso \
+uv run --extra experiments python src/realdata/run_realdata.py --iter 10 --methods lasso \
     --datasets wine_red --n_samples 100 --out result/local_realdata.csv
 ```
 
 `plot_realdata.py` は α=0.05 (変更は `--alpha`) の棄却率を
 `realdata_summary.csv` (縦持ち) と、手法ごとの
 `realdata_table_<method>.csv` (行 = n, 列 = データセット,
-セル = proposed/oc の論文 Table 1 形式) に出力する。
+セル = proposed/oc/ds の論文 Table 1 形式) に出力する。
 `--n_pvalues` で各条件 (手法, n, データセット) が使用する p 値の個数を
 seed 順の先頭から揃えられる (既定は全件)。
 
@@ -218,7 +229,7 @@ seed 順の先頭から揃えられる (既定は全件)。
 | 列 | 内容 |
 |----|------|
 | method | 手法名 |
-| data_type | iid / correlated |
+| data_type | iid / corr |
 | seed | 乱数シード (= 試行ID) |
 | p_value | 選択的 p 値 |
 | oc_p_value | over-conditioning の p 値 (比較用) |
@@ -231,10 +242,14 @@ seed 順の先頭から揃えられる (既定は全件)。
 | n_signal | 信号を載せた特徴量数 |
 | selected_index | 観測データで選ばれた特徴量の番号 |
 | is_signal | 選ばれた特徴量が真に信号を持つか (power の条件付けに使用) |
+| ds_p_value | データ分割法の p 値 (前半で選択、後半で z 検定) |
+| ds_selected_index | データ分割法 (前半のみ) で選ばれた特徴量の番号 |
+| ds_is_signal | データ分割法の選択が真に信号を持つか (power の条件付けに使用) |
 
 ### 実データ (`run_realdata.py`)
 
-合成データとの差分: `data_type / signal / n_signal / is_signal` の代わりに
+合成データとの差分: `data_type / signal / n_signal / is_signal / ds_is_signal`
+の代わりに (真の信号が未知のため is_signal 系はなし)
 
 | 列 | 内容 |
 |----|------|
@@ -242,8 +257,14 @@ seed 順の先頭から揃えられる (既定は全件)。
 | n_features | 標準化後の特徴量数 (定数列は除外されるため変動し得る) |
 | sigma2 | OLS 残差から推定した分散 |
 
-## 進捗確認
+## 進捗確認・トラブルシュート
 
 ```bash
-qstat -u $USER            # 自分のジョブ状況
+qstat -u $USER            # 自分のジョブ状況 (配列ジョブは親 1 行で表示される)
+qstat -t 62637[]          # 配列ジョブの subjob ごとの状態を表示
+ls eo/                    # PBS の標準出力/エラーログ (subjob ごとに 1 ファイル)
 ```
+
+subjob がすぐ終わる・結果 CSV ができない場合は `eo/` のログを確認する。
+Python の import エラーが出ている場合は `uv sync --extra experiments`
+を実行し直してから再投入する。

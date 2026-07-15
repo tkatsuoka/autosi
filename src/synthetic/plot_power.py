@@ -19,32 +19,47 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from src.common.merge_results import load_results, limit_per_group
 
 
-def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
-    """(手法, データ種別) 1 組の power 折れ線グラフ (横軸 Δ, 線 1 本) を描く。"""
-    # 実際に信号が載った特徴量が選ばれた試行のみで power を測る。
-    # null 特徴量 (真の係数 0) が選ばれて棄却された試行は Type I error なので、
-    # power の分母・分子どちらからも除外する (= 条件付き検出力)。
-    if "is_signal" in sub.columns:
+def _power_curve(sub, p_col, flag_col, alpha, n_pvalues, label, method, data_type):
+    """1 本分の power 曲線 (Δ -> 棄却率) を集計して返す。
+
+    実際に信号が載った特徴量が選ばれた試行のみで power を測る。
+    null 特徴量 (真の係数 0) が選ばれて棄却された試行は Type I error なので、
+    power の分母・分子どちらからも除外する (= 条件付き検出力)。
+    """
+    if flag_col in sub.columns:
         n_total = len(sub)
-        sub = sub[sub["is_signal"]]
-        print(f"{method} ({data_type}): 信号特徴量が選ばれた試行 "
+        sub = sub[sub[flag_col]]
+        print(f"{method} ({data_type}) [{label}]: 信号特徴量が選ばれた試行 "
               f"{len(sub)}/{n_total} のみで power を算出")
     else:
-        print(f"警告: {method} ({data_type}) に is_signal 列が無い (旧形式CSV)。"
+        print(f"警告: {method} ({data_type}) に {flag_col} 列が無い (旧形式CSV)。"
               "全試行で power を算出します。run_experiment.py で再計算してください。")
 
-    # is_signal で絞った後、条件 (Δ) ごとに seed 順で先頭 n_pvalues 件だけ使う
+    # 信号選択で絞った後、条件 (Δ) ごとに seed 順で先頭 n_pvalues 件だけ使う
     sub = limit_per_group(sub, ["signal"], n_pvalues)
 
     # Δ ごとに power = P(p 値 < α | 信号特徴量を選択) を集計
-    power = (
-        sub.assign(reject=sub.p_value < alpha)
+    return (
+        sub.assign(reject=sub[p_col] < alpha)
         .groupby("signal")["reject"].mean()
         .sort_index()
     )
 
+
+def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
+    """(手法, データ種別) 1 組の power 折れ線グラフ (横軸 Δ) を描く。"""
+    # (凡例ラベル, p 値列, 信号選択フラグ列)。データ分割法は前半のみで
+    # 選択するため、条件付けに使うフラグ列も別 (ds_is_signal)。
+    curves = [("proposed", "p_value", "is_signal")]
+    if "ds_p_value" in sub.columns:
+        curves.append(("data splitting", "ds_p_value", "ds_is_signal"))
+
     fig, ax = plt.subplots(figsize=(6, 5))
-    ax.plot(power.index, power.values, marker="o", color="C0")
+    for i, (label, p_col, flag_col) in enumerate(curves):
+        power = _power_curve(sub, p_col, flag_col, alpha, n_pvalues,
+                             label, method, data_type)
+        ax.plot(power.index, power.values, marker="o", color=f"C{i}",
+                label=label)
     ax.axhline(alpha, color="gray", ls="--", lw=1, label=f"alpha={alpha}")
     ax.set_xlabel("signal Δ")
     ax.set_ylabel("power")

@@ -5,7 +5,7 @@
 # y = Xβ + ε (先頭 N_SIGNAL 個の係数を Δ) でデータを生成し、
 # power = P(p 値 < α) を Δ ごとに見る。
 #
-# 同時実行本数は cpu-medium の設定 (ユーザーあたり同時実行上限) に合わせて絞る。
+# 同時実行本数はキューの設定 (ユーザーあたり同時実行上限) に合わせて絞る。
 #   - 既定: qstat からキュー設定の上限を自動検出し、-J 0-(TOTAL-1)%上限 で投入
 #   - 自動検出できなければ %throttle を付けず、キュー設定の上限にそのまま従う
 #   - -j で上限を明示指定して上書きも可能
@@ -30,13 +30,20 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 #   k = sig_index * NSPLIT + i
 if [ -n "${PBS_ARRAY_INDEX:-}" ]; then
     cd "$PBS_O_WORKDIR"
+    # 計算ノードでは uv を使わず、uv sync --extra experiments 済みの
+    # venv の python を直接使う (uv run は extras を外して再同期してしまう)
+    PYTHON="$PBS_O_WORKDIR/.venv/bin/python3"
+    if [ ! -x "$PYTHON" ]; then
+        echo "エラー: $PYTHON がありません。先に uv sync --extra experiments を実行してください。" >&2
+        exit 1
+    fi
     read -ra SIG_ARR <<< "${SIGNALS//:/ }"          # ':' 符号化を復号
     sig=${SIG_ARR[$(( PBS_ARRAY_INDEX / NSPLIT ))]}
     i=$(( PBS_ARRAY_INDEX % NSPLIT ))
     s=$(( i * PER )); e=$(( (i + 1) * PER ))
     OUTDIR=result/power/${METHOD}_${DATA_TYPE}_d${sig}
     mkdir -p "$OUTDIR"
-    uv run python src/synthetic/run_experiment.py \
+    "$PYTHON" src/synthetic/run_experiment.py \
         --methods "$METHOD" --data_types "$DATA_TYPE" \
         --signal "$sig" --n_signal "$N_SIGNAL" \
         --seed_start "$s" --seed_end "$e" --seed_offset "$OFFSET" --workers "$WORKERS" \
@@ -47,6 +54,11 @@ fi
 # --- ランチャ: 全作業を 1 本のジョブ配列として投入 ---
 source "$(dirname "$0")/../pbs_lib.sh"
 
+# PBS ログ (標準出力/エラー) の出力先を用意する
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+EO_DIR="$PROJECT_DIR/eo"
+mkdir -p "$EO_DIR"
+
 METHOD=lasso
 DATA_TYPE=iid
 NSPLIT=10                    # Δ ごとの作業単位数 (= 分割数)
@@ -54,7 +66,7 @@ PER=1100                     # 1 作業単位が計算する p 値の個数 (エ
 SIGNALS="0.1 0.2 0.3 0.4"    # 横軸となる信号 Δ のリスト
 N_SIGNAL=5
 WORKERS=96
-QUEUE=cpu-medium
+QUEUE=cpu-large
 THROTTLE=""                  # -j: 空ならキュー設定から自動検出
 
 while getopts "m:d:n:p:s:k:w:q:j:" o; do case $o in
@@ -91,10 +103,9 @@ for sig in "${SIG_ARR[@]}"; do mkdir -p "result/power/${METHOD}_${DATA_TYPE}_d${
 # subjob へ渡す設定 (リストは ':' 符号化して空白問題を回避)
 VLIST="METHOD=${METHOD},DATA_TYPE=${DATA_TYPE},SIGNALS=$(encode_list "$SIGNALS"),NSPLIT=${NSPLIT},PER=${PER},N_SIGNAL=${N_SIGNAL},WORKERS=${WORKERS},OFFSET=${OFFSET}"
 
-qsub -q "$QUEUE" -J "$RANGE" \
+qsub -q "$QUEUE" -J "$RANGE" -o "$EO_DIR/" \
      -l select=1:ncpus=${WORKERS}:mem=256gb -l walltime=72:00:00 \
      -v "$VLIST" "$0"
 
-echo "投入完了 -> result/power/ 以下。完了後:"
-echo "  uv run python src/common/merge_results.py --indir result/power --out result/power_results.csv"
-echo "  uv run python src/synthetic/plot_power.py --csv result/power_results.csv"
+echo "投入完了 -> result/power/ 以下 (PBS ログは eo/)。完了後:"
+echo "  uv run --extra experiments python src/synthetic/plot_power.py --csv result/power"

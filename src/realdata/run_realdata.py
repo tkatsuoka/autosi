@@ -14,8 +14,8 @@ y の中心化を「アルゴリズム内で」行う (切片を無罰則で入�
 中心化は y の線形変換なので autosi がそのまま追跡でき、valid な推論になる。
 
 使い方:
-  uv run python src/realdata/datasets.py                      # 事前に一度だけ
-  uv run python src/realdata/run_realdata.py --iter 10 --datasets wine_red
+  uv run --extra experiments python src/realdata/datasets.py                      # 事前に一度だけ
+  uv run --extra experiments python src/realdata/run_realdata.py --iter 10 --datasets wine_red
 """
 
 import os
@@ -34,6 +34,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 from tqdm import tqdm
 
 import autosi as si
@@ -101,6 +102,39 @@ def _build_algorithm(method, X, n, p, seed, cfg):
     return algorithm
 
 
+def _data_split_p_value(method, X_np, y_np, sigma2, seed, cfg):
+    """データ分割法 (比較手法): 前半で特徴選択し、後半で古典的 z 検定を行う。
+
+    他手法と同じ n 行を半分ずつ選択と推論に使うため、データ量はフェア。
+    サブサンプルの行順はランダムなので先頭 n/2 での分割で問題ない。
+    後半は半分内で再中心化してから検定する (切片相当)。分散は他手法と
+    同じ全サブサンプルからの推定値 sigma2 を使い、入力条件を揃える。
+
+    Returns
+    -------
+    (p_value, selected_index)
+    """
+    n, p = X_np.shape
+    n1 = n // 2
+    X1_np, X2_np = X_np[:n1], X_np[n1:]
+    y1_np, y2_np = y_np[:n1], y_np[n1:]
+
+    # 前半: 他手法と同じアルゴリズム (y 中心化込み) を 1 回実行して特徴を選ぶ
+    X1 = si.siarray(X1_np)
+    algorithm = _build_algorithm(method, X1, n1, p, seed, cfg)
+    eta1 = algorithm(si.siarray(y1_np))
+    selected = int(np.argmax(eta1.data @ X1_np))
+
+    # 後半: 半分内で中心化し、選択に使っていないデータで OLS 係数の z 検定
+    X2c = X2_np - X2_np.mean(axis=0)
+    y2c = y2_np - y2_np.mean()
+    eta2 = np.linalg.solve(X2c.T @ X2c, X2c.T)[selected]
+    stat = float(eta2 @ y2c)
+    var_stat = sigma2 * float(eta2 @ eta2)
+    p_value = float(2.0 * norm.sf(abs(stat) / np.sqrt(var_stat)))
+    return p_value, selected
+
+
 def run_single(task):
     """1 試行: サブサンプリング -> eta 取得 -> p 値計算 (時間計測)。"""
     method, dataset, n_samples, seed, cfg = task
@@ -129,6 +163,11 @@ def run_single(task):
         # 比較数は選択パターン総数 2^p (log を渡す仕様)
         bonferroni_p = result.bonferroni_p_value(log_num_comparisons=p * np.log(2))
 
+        # データ分割法 (比較手法)
+        ds_p, ds_selected = _data_split_p_value(
+            method, X_np, y_np, sigma2, seed, cfg
+        )
+
         return {
             "method": method,
             "dataset": dataset,
@@ -142,6 +181,9 @@ def run_single(task):
             "n_features": p,
             "sigma2": sigma2,
             "selected_index": selected_index,
+            # データ分割法の結果 (選択は前半のみで行うため別に記録)
+            "ds_p_value": ds_p,
+            "ds_selected_index": ds_selected,
         }
     except Exception:
         # 1 試行の失敗 (数値誤差など) で全体を止めない。ログを残して次へ進む。
@@ -244,6 +286,7 @@ def main():
             n=("p_value", "size"),
             reject_proposed=("p_value", lambda s: float((s < 0.05).mean())),
             reject_oc=("oc_p_value", lambda s: float((s < 0.05).mean())),
+            reject_ds=("ds_p_value", lambda s: float((s < 0.05).mean())),
             mean_time=("time", "mean"),
         )
         print(summary.to_string())

@@ -28,7 +28,8 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
         "p_value": "proposed",
         "oc_p_value": "o/w-pp",
         "naive_p_value": "naive",
-        "bonferroni_p_value": "bonferroni"
+        "bonferroni_p_value": "bonferroni",
+        "ds_p_value": "data splitting",
     }
 
     fig, ax = plt.subplots(figsize=(7, 5)) # 凡例スペースのために少し横幅を広げています

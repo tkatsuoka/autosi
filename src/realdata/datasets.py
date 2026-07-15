@@ -8,7 +8,7 @@ si4pipeline 論文 (Shiraishi et al., 2024) の実データ実験と同じ
 キャッシュする。以降の読み込みはネットワーク不要 (計算ノードで安全)。
 
 使い方:
-  uv run python src/realdata/datasets.py        # 全データセットを準備
+  uv run --extra experiments python src/realdata/datasets.py        # 全データセットを準備
 """
 
 import io
@@ -157,7 +157,7 @@ def load_dataset(name: str) -> tuple[np.ndarray, np.ndarray]:
     if not os.path.exists(path):
         raise FileNotFoundError(
             f"{path} が見つかりません。先に "
-            "`uv run python src/realdata/datasets.py` を実行してください。"
+            "`uv run --extra experiments python src/realdata/datasets.py` を実行してください。"
         )
     df = pd.read_csv(path)
     X = df.iloc[:, :-1].to_numpy(dtype=float)
