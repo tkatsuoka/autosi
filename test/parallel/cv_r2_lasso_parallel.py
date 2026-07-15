@@ -37,17 +37,17 @@ def cv_r2_lasso(y, *, X, fold_indices, lambda_grid, K, n_features, n_samples,
 
             col_sq_mean = si.sum(X_tr ** 2, axis=0) / n_tr
 
-            lv = lam / n_tr
+            # sklearn と同じ規約 (1/(2n))RSS + λ|β|₁ (しきい値は λ そのもの)
             coef = si.array(np.zeros(n_features))
             for _ in range(max_iter):
                 coef_old = coef.copy()
                 for j in range(n_features):
                     r_j = y_tr - X_tr @ coef + X_tr[:, j] * coef[j]
                     z_j = X_tr[:, j] @ r_j / n_tr
-                    if z_j > lv:
-                        coef[j] = (z_j - lv) / col_sq_mean[j]
-                    elif z_j < -lv:
-                        coef[j] = (z_j + lv) / col_sq_mean[j]
+                    if z_j > lam:
+                        coef[j] = (z_j - lam) / col_sq_mean[j]
+                    elif z_j < -lam:
+                        coef[j] = (z_j + lam) / col_sq_mean[j]
                     else:
                         coef[j] = si.array(0.0)
                 if si.sum(si.abs(coef - coef_old)) < tol:
@@ -64,17 +64,16 @@ def cv_r2_lasso(y, *, X, fold_indices, lambda_grid, K, n_features, n_samples,
     lam_star = lambda_grid[lam_star_idx]
 
     col_sq_mean = si.sum(X ** 2, axis=0) / n_samples
-    lambda_val = lam_star / n_samples
     coef = si.array(np.zeros(n_features))
     for _ in range(max_iter):
         coef_old = coef.copy()
         for j in range(n_features):
             r_j = y - X @ coef + X[:, j] * coef[j]
             z_j = X[:, j] @ r_j / n_samples
-            if z_j > lambda_val:
-                coef[j] = (z_j - lambda_val) / col_sq_mean[j]
-            elif z_j < -lambda_val:
-                coef[j] = (z_j + lambda_val) / col_sq_mean[j]
+            if z_j > lam_star:
+                coef[j] = (z_j - lam_star) / col_sq_mean[j]
+            elif z_j < -lam_star:
+                coef[j] = (z_j + lam_star) / col_sq_mean[j]
             else:
                 coef[j] = si.array(0.0)
         if si.sum(si.abs(coef - coef_old)) < tol:

@@ -1,9 +1,21 @@
 [project]
 name = "autosi"
 version = "0.1.0"
-description = "Add your description here"
+description = "NumPy ライクな記述でSelective Inferenceが実行可能なライブラリ"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "sicore>=3.0.0",
+]
+
+# 実験スクリプト (src/) を動かすときの追加依存:
+#   uv sync --extra experiments
+[project.optional-dependencies]
+experiments = [
+    "pandas",
+    "matplotlib",
+    "tqdm",
+    # 実データ実験 (src/realdata) の UCI Excel ファイル変換用
+    "openpyxl",
+    "xlrd",
 ]

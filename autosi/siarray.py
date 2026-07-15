@@ -11,7 +11,12 @@ from ._mixin_reduction import ReductionMixin
 
 
 class siarray(ArithmeticMixin, ComparisonMixin, IndexMixin, ArrayMixin, ReductionMixin):
-    """有理関数として表現された配列。選択的推論の区間追跡に使用する。"""
+    """Array whose elements are rational functions of ``z``.
+
+    Each element is represented by ascending coefficient lists ``coef_num`` and
+    ``coef_den``; selection and comparison operations on it record the selection
+    event as a truncation interval (see :class:`IntervalTracker`).
+    """
 
     def __init__(
         self,
@@ -19,15 +24,16 @@ class siarray(ArithmeticMixin, ComparisonMixin, IndexMixin, ArrayMixin, Reductio
         numerator: list[np.ndarray] | None = None,
         denominator: list[np.ndarray] | None = None,
     ):
-        """
+        """Construct from a value or from rational coefficient lists.
+
         Parameters
         ----------
         X : np.ndarray, float, int, or siarray, optional
-            ラップする配列またはスカラー値
-        numerator : list[np.ndarray], optional
-            有理関数の分子係数
-        denominator : list[np.ndarray], optional
-            有理関数の分母係数
+            Array or scalar value to wrap.
+        numerator : list of np.ndarray, optional
+            Numerator coefficients of the rational function.
+        denominator : list of np.ndarray, optional
+            Denominator coefficients of the rational function.
         """
         if isinstance(X, siarray):
             self.coef_num = [c.copy() for c in X.coef_num]
@@ -49,12 +55,23 @@ class siarray(ArithmeticMixin, ComparisonMixin, IndexMixin, ArrayMixin, Reductio
             self._shape = X.shape
 
     # ------------------------------------------------------------------------
-    # ファクトリメソッド
+    # Factory methods
     # ------------------------------------------------------------------------
 
     @classmethod
     def constant(cls, value: np.ndarray | float | int) -> "siarray":
-        """定数ノードを作成"""
+        """Create a constant node.
+
+        Parameters
+        ----------
+        value : np.ndarray, float, or int
+            Constant value.
+
+        Returns
+        -------
+        siarray
+            Degree-0 rational function holding ``value``.
+        """
         if not isinstance(value, np.ndarray):
             value = np.array(value)
         obj = cls.__new__(cls)
@@ -69,7 +86,20 @@ class siarray(ArithmeticMixin, ComparisonMixin, IndexMixin, ArrayMixin, Reductio
         numerator: list[np.ndarray],
         denominator: list[np.ndarray] | None = None,
     ) -> "siarray":
-        """有理関数として作成"""
+        """Create a rational function from coefficient lists.
+
+        Parameters
+        ----------
+        numerator : list of np.ndarray
+            Ascending numerator coefficients.
+        denominator : list of np.ndarray, optional
+            Ascending denominator coefficients (default: constant 1).
+
+        Returns
+        -------
+        siarray
+            The constructed rational function array.
+        """
         obj = cls.__new__(cls)
         obj.coef_num = list(numerator)
         obj.coef_den = (
@@ -81,18 +111,24 @@ class siarray(ArithmeticMixin, ComparisonMixin, IndexMixin, ArrayMixin, Reductio
         return obj
 
     # ------------------------------------------------------------------------
-    # ヘルパーメソッド
+    # Helper methods
     # ------------------------------------------------------------------------
 
     def _to_siarray(self, other) -> "siarray":
-        """他の値をsiarrayオブジェクトに変換"""
+        """Convert another value into an siarray."""
         if isinstance(other, siarray):
             return other
         return siarray.constant(other)
 
     @property
     def data(self) -> np.ndarray:
-        """現在の z での有理関数の値を返す"""
+        """Value of the rational function at the current ``z``.
+
+        Returns
+        -------
+        np.ndarray
+            The evaluated array. Uses ``z = 0`` when no ``z`` is set.
+        """
         z = IntervalTracker.get_instance().get_z()
         if z is None:
             z = 0.0
@@ -106,15 +142,16 @@ class siarray(ArithmeticMixin, ComparisonMixin, IndexMixin, ArrayMixin, Reductio
 
     @property
     def deg(self) -> tuple[int, int]:
-        """(分子の次数, 分母の次数) を返す"""
+        """Return ``(numerator degree, denominator degree)``."""
         return (len(self.coef_num) - 1, len(self.coef_den) - 1)
 
     # ------------------------------------------------------------------------
-    # プロパティ
+    # Properties
     # ------------------------------------------------------------------------
 
     @property
     def shape(self):
+        """Logical shape of the array."""
         return self._shape
 
     @shape.setter
@@ -123,80 +160,29 @@ class siarray(ArithmeticMixin, ComparisonMixin, IndexMixin, ArrayMixin, Reductio
 
     @property
     def ndim(self) -> int:
+        """Number of dimensions."""
         return len(self._shape)
 
     @property
     def size(self) -> int:
+        """Total number of elements."""
         return np.prod(self._shape)
 
     @property
     def dtype(self):
+        """Coefficient dtype."""
         return self.coef_num[0].dtype
 
     # ------------------------------------------------------------------------
-    # 推論関連メソッド
+    # Conversion methods
     # ------------------------------------------------------------------------
 
-    def add_prob_vec_nodes(self, prob_vec: "siarray") -> None:
-        """確率変数ベクトルを保存"""
-        self.prob_vec = prob_vec
-
-    def add_observed_model(self, model: "siarray") -> None:
-        """観測されたモデルを保存"""
-        self.observed_model = model
-
-    def add_algorithm(self, algorithm: callable) -> None:
-        """選択アルゴリズム関数を保存"""
-        self.algorithm_func = algorithm
-
-    def forward_si(self, a: np.ndarray, b: np.ndarray, z: float):
-        """アルゴリズムをRationalFunctionで実行し、制約区間を計算"""
-        from . import poly_memo
-
-        # レベルC: 新しい z が前回の最終(最小)累積区間に含まれれば、全制約が
-        # z を含むため出力・区間が一致する。アルゴリズム再実行を丸ごとスキップ。
-        if poly_memo.is_enabled() and z is not None:
-            cached = poly_memo.run_lookup(z)
-            if cached is not None:
-                return cached
-
-        tracker = IntervalTracker.get_instance()
-        tracker.reset()
-        tracker.set_z(z)
-
-        prob_vec_rf = siarray.from_rational(
-            numerator=[a, b],
-            denominator=[np.ones_like(a)],
-        )
-        model = self.algorithm_func(prob_vec_rf)
-
-        intervals = tracker.get()
-        output = model.data if isinstance(model, siarray) else model
-
-        if poly_memo.is_enabled() and z is not None:
-            poly_memo.run_store(z, output, intervals)
-        return output, intervals
-
-    def model_selector(self, searched_model: np.ndarray | "siarray") -> bool:
-        """2つのモデルが同じかどうかを判定"""
-        data1 = (
-            self.observed_model.data
-            if isinstance(self.observed_model, siarray)
-            else np.asarray(self.observed_model)
-        )
-        data2 = (
-            searched_model.data
-            if isinstance(searched_model, siarray)
-            else np.asarray(searched_model)
-        )
-        return np.allclose(data1, data2)
-
     def to_numpy(self) -> np.ndarray:
-        """NumPy配列を返す"""
+        """Return the value at the current ``z`` as a NumPy array (copy)."""
         return self.data.copy()
 
     def values(self) -> np.ndarray:
-        """データの値を返す"""
+        """Return the value at the current ``z``."""
         return self.data
 
     def __repr__(self) -> str:

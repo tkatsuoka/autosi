@@ -5,8 +5,8 @@
 (result/fpr_<method>_<data_type>.pdf) を 1 本の折れ線で出力する。
 
 使い方 (CSV 単体でもフォルダでも可。フォルダは再帰的に全 CSV を読む):
-  python src/plot_results.py --csv result/fpr/lasso_iid
-  python src/plot_results.py --csv result/fpr
+  python src/synthetic/plot_fpr.py --csv result/fpr/lasso_iid
+  python src/synthetic/plot_fpr.py --csv result/fpr
 """
 
 import os
@@ -15,12 +15,14 @@ import argparse
 
 import matplotlib.pyplot as plt
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.merge_results import load_results
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from src.common.merge_results import load_results, limit_per_group
 
 
-def plot_one(sub, method, data_type, alpha, outdir):
+def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
     """(手法, データ種別) 1 組の FPR 折れ線グラフ (横軸 n, 線 1 本) を描く。"""
+    # 条件 (サンプル数) ごとに seed 順で先頭 n_pvalues 件だけ使う
+    sub = limit_per_group(sub, ["n_samples"], n_pvalues)
     # サンプル数ごとに type I error rate = P(p 値 < α) を集計
     p_cols = {
         "p_value": "proposed",
@@ -67,6 +69,9 @@ def main():
                         help="CSV ファイル、またはCSVを含むフォルダ")
     parser.add_argument("--outdir", type=str, default="result")
     parser.add_argument("--alpha", type=float, default=0.05)
+    parser.add_argument("--n_pvalues", type=int, default=None,
+                        help="各条件で使用する p 値の個数 (seed 順の先頭から。"
+                             "既定: 全件)")
     args = parser.parse_args()
 
     df = load_results(args.csv)
@@ -74,7 +79,8 @@ def main():
 
     # (手法, データ種別) の組ごとに 1 枚ずつ出力
     for (method, data_type), sub in df.groupby(["method", "data_type"]):
-        plot_one(sub, method, data_type, args.alpha, args.outdir)
+        plot_one(sub, method, data_type, args.alpha, args.outdir,
+                 n_pvalues=args.n_pvalues)
 
 
 if __name__ == "__main__":

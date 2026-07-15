@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from .interval_tracker import IntervalTracker
+from .constraints import add_batch_constraints
 from .poly_utils import (
-    calc_polynominal_interval,
-    calc_polynominal_intervals_batch,
     poly_mul,
     poly_add,
     poly_sub,
@@ -15,18 +13,27 @@ from .poly_utils import (
 
 
 class ArithmeticMixin:
-    """siarray の算術演算子"""
+    """Arithmetic operators for siarray."""
 
     def _common_denominator(self):
-        """分母を共通化（通分）する。ユニークな分母のみの積を使用。"""
-        # 高速チェック: 各次数の係数配列が全要素同じか
+        """Put all elements over a common denominator.
+
+        Uses the product of the *unique* denominators only.
+
+        Returns
+        -------
+        siarray
+            Equivalent array sharing a single denominator across elements. Returns
+            ``self`` unchanged when the denominator is already uniform.
+        """
+        # Fast check: are the coefficient arrays of every degree element-wise equal?
         d0 = [c.flat[0] for c in self.coef_den]
         if all(np.allclose(c, d0[deg]) for deg, c in enumerate(self.coef_den)):
             return self
 
         flat_size = self.coef_num[0].size
 
-        # 各要素がどのユニーク分母に属するかをマッピング
+        # Map each element to the unique denominator it belongs to
         unique_dens: list = []
         elem_to_unique: list[int] = []
 
@@ -44,7 +51,7 @@ class ArithmeticMixin:
                 unique_dens.append(den)
             elem_to_unique.append(found_idx)
 
-        # 各ユニーク分母に対して「それ以外の積」を事前計算
+        # Precompute, for each unique denominator, the product of all the others
         n_unique = len(unique_dens)
         multipliers = []
         for i in range(n_unique):
@@ -56,7 +63,7 @@ class ArithmeticMixin:
 
         common_den = poly_mul(multipliers[0], unique_dens[0])
 
-        # 各要素の分子を調整
+        # Adjust each element's numerator accordingly
         max_deg = len(common_den)
         new_num = [np.zeros(self._shape) for _ in range(max_deg)]
 
@@ -73,7 +80,7 @@ class ArithmeticMixin:
 
     def __add__(self, other):
         other = self._to_siarray(other)
-        # 分母が同じなら分子のみ加算（分母の乗算を回避）
+        # Same denominator: add numerators only (avoid multiplying denominators)
         if _denoms_equal(self.coef_den, other.coef_den):
             return type(self).from_rational(
                 poly_add(self.coef_num, other.coef_num),
@@ -92,7 +99,7 @@ class ArithmeticMixin:
 
     def __sub__(self, other):
         other = self._to_siarray(other)
-        # 分母が同じなら分子のみ減算（分母の乗算を回避）
+        # Same denominator: subtract numerators only (avoid multiplying denominators)
         if _denoms_equal(self.coef_den, other.coef_den):
             return type(self).from_rational(
                 poly_sub(self.coef_num, other.coef_num),
@@ -122,7 +129,7 @@ class ArithmeticMixin:
     def __truediv__(self, other):
         other = self._to_siarray(other)
         if len(other.coef_num) == 1 and len(other.coef_den) == 1:
-            # 定数除算: 次数が変わらないため poly_reduce 不要
+            # Division by a constant: degree is unchanged, so poly_reduce is not needed
             new_num = [c / other.coef_num[0] for c in self.coef_num]
             new_den = [c / other.coef_den[0] for c in self.coef_den]
             return type(self).from_rational(new_num, new_den)
@@ -137,7 +144,7 @@ class ArithmeticMixin:
     def __matmul__(self, other):
         other = self._to_siarray(other)
 
-        # 通分する
+        # Put both operands over a common denominator
         self_cd = self._common_denominator()
         other_cd = other._common_denominator()
 
@@ -164,7 +171,7 @@ class ArithmeticMixin:
         )
 
     def __pow__(self, power):
-        """累乗演算"""
+        """Integer power via repeated multiplication."""
         power_val = int(power.data.item()) if isinstance(power, type(self)) else power
         result = self
         for _ in range(power_val - 1):
@@ -172,8 +179,6 @@ class ArithmeticMixin:
         return result
 
     def __abs__(self):
-        z = IntervalTracker.get_instance().get_z()
-        tracker = IntervalTracker.get_instance()
         positive_idx = (self.data >= 0).view(bool)
         negative_idx = (self.data < 0).view(bool)
 
@@ -183,22 +188,18 @@ class ArithmeticMixin:
         ]
         new_den = [c.copy() for c in self.coef_den]
 
-        def _update_tracker_batch(coef_num_list, coef_den_list):
-            """係数リストをまとめてバッチ処理し tracker を更新"""
-            # shape: (n_terms, n_elems) → transpose → (n_elems, n_terms)
-            nums = np.array(coef_num_list).T   # (n_elems, n_num_terms)
-            dens = np.array(coef_den_list).T   # (n_elems, n_den_terms)
-            for interval in calc_polynominal_intervals_batch(nums, dens, z):
-                tracker.update(interval)
-
+        # Track the interval over which each element keeps its sign (+ if positive,
+        # - if negative): impose num > 0 on the positive side and -num > 0 on the
+        # negative side. Coefficient lists are (n_terms, n_elems), so transpose to
+        # (n_elems, n_terms).
         if positive_idx.any():
-            pos_num = [self.coef_num[i][positive_idx].flatten() for i in range(len(self.coef_num))]
-            pos_den = [self.coef_den[i][positive_idx].flatten() for i in range(len(self.coef_den))]
-            _update_tracker_batch(pos_num, pos_den)
+            nums = np.array([c[positive_idx].flatten() for c in self.coef_num]).T
+            dens = np.array([c[positive_idx].flatten() for c in self.coef_den]).T
+            add_batch_constraints(nums, dens)
 
         if negative_idx.any():
-            neg_num = [-self.coef_num[i][negative_idx].flatten() for i in range(len(self.coef_num))]
-            neg_den = [self.coef_den[i][negative_idx].flatten() for i in range(len(self.coef_den))]
-            _update_tracker_batch(neg_num, neg_den)
+            nums = np.array([-c[negative_idx].flatten() for c in self.coef_num]).T
+            dens = np.array([c[negative_idx].flatten() for c in self.coef_den]).T
+            add_batch_constraints(nums, dens)
 
         return type(self).from_rational(new_num, new_den)

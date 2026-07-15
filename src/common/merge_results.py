@@ -25,6 +25,30 @@ def load_results(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def limit_per_group(df: pd.DataFrame, group_cols: list[str],
+                    n_pvalues: int | None, sort_col: str = "seed") -> pd.DataFrame:
+    """条件 (group_cols) ごとに sort_col 順で先頭 n_pvalues 行だけ残す。
+
+    エラー時の不足に備えて多めに計算した p 値から、プロットに使う個数を
+    条件間で揃えるために使う。n_pvalues が None なら全件をそのまま返す。
+    不足している条件があれば警告を表示する。
+    """
+    if n_pvalues is None:
+        return df
+    limited = (
+        df.sort_values(sort_col)
+        .groupby(group_cols, group_keys=False)
+        .head(n_pvalues)
+    )
+    counts = limited.groupby(group_cols).size()
+    short = counts[counts < n_pvalues]
+    if not short.empty:
+        print(f"警告: 以下の条件は p 値が {n_pvalues} 件に足りません "
+              "(ある分だけで集計します):")
+        print(short.to_string())
+    return limited
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--indir", type=str, default="result/parts")

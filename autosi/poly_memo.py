@@ -5,77 +5,56 @@ from sicore import RealSubset
 
 
 class PolyMemo:
-    """forward_si の z 反復に対する多項式区間計算のメモ化。
+    """Memoization of interval computation across the ``z`` iterations of forward_si.
 
-    1回の inference()（=1つのp-value）の中では選択直線 a, b が固定で z のみが
-    変化するため、各計算地点で生成される多項式の係数は呼び出し間で不変になる。
-    これを利用して2層のキャッシュを行う:
+    Within a single ``inference()`` (one p-value) the selection line ``a, b`` is
+    fixed and only ``z`` changes, so the polynomial coefficients produced at each
+    computation site are invariant across calls. Two cache levels exploit this:
 
-    - レベルA（根キャッシュ）: 多項式の根（固有値）は z に依存しないため、係数
-      ハッシュをキーに根をキャッシュし、重い eigvals の再計算を省く。
-    - レベルB（区間キャッシュ）: iso-sign 区間は「z の周りで結果が一定の最大区間」
-      なので、結果区間 [lo, hi] に次の z が含まれれば計算ごとスキップできる。
-      z 探索は正・負を反復するため、区間キャッシュは符号別（True/False）に保持する。
+    - Level A (root cache): polynomial roots (eigenvalues) do not depend on ``z``, so
+      they are cached by coefficient hash to avoid recomputing the expensive
+      ``eigvals``.
+    - Level B (interval cache): an iso-sign interval is the maximal interval around
+      ``z`` over which the result is constant, so the computation can be skipped when
+      the next ``z`` falls inside the cached ``[lo, hi]``. Because the search
+      alternates positive and negative ``z``, the interval cache is keyed per sign
+      (True/False).
 
-    p-value 計算ごとに a, b が変わるので、係数が変わればキー自体が変化し誤った
-    再利用は起きない。ただしメモリ膨張を防ぐため inference() 開始時に reset() し、
-    各計算地点につき符号別に最新1件のみ保持する。
+    Since ``a, b`` change for each p-value, the coefficients (and therefore the key)
+    change too, so stale reuse cannot occur. To bound memory, ``reset()`` is called
+    at the start of ``inference()`` and only the most recent entry per sign is kept
+    at each computation site.
     """
 
     def __init__(self) -> None:
         self._enabled = True
-        self._roots: dict = {}   # key -> (roots_den, roots_adj)  レベルA
-        self._region: dict = {}  # key -> {sign(bool): (lo, hi, result)}  レベルB
-        # レベルC（実行全体スキップ）: 最深(最小)の累積区間に z が含まれれば
-        # forward_si 全体をスキップ。符号別に最終区間と出力をキャッシュする。
-        self._run: dict = {}     # sign(bool) -> (lo, hi, output, intervals)
+        self._roots: dict = {}   # key -> (roots_den, roots_adj)  level A
+        self._region: dict = {}  # key -> {sign(bool): (lo, hi, result)}  level B
 
     # ------------------------------------------------------------------
-    # 状態管理
+    # State management
     # ------------------------------------------------------------------
 
     def set_enabled(self, flag: bool) -> None:
+        """Enable or disable memoization."""
         self._enabled = bool(flag)
 
     def is_enabled(self) -> bool:
+        """Return whether memoization is enabled."""
         return self._enabled
 
     def reset(self) -> None:
-        """キャッシュを全消去（p-value 計算の切り替え時に呼ぶ）"""
+        """Clear all caches (call when switching p-value computation)."""
         self._roots.clear()
         self._region.clear()
-        self._run.clear()
 
     # ------------------------------------------------------------------
-    # レベルC: 実行全体のスキップ（最深=最小累積区間ファストパス）
-    # ------------------------------------------------------------------
-
-    def run_lookup(self, z: float):
-        """新しい z が前回の最終(最小)累積区間に含まれれば (output, intervals) を返す。
-
-        含まれる場合、全制約区間が z を含むため出力・区間は前回と完全一致し、
-        forward_si を丸ごとスキップできる。含まれなければ None。
-        """
-        entry = self._run.get(z >= 0)
-        if entry is not None and entry[0] <= z <= entry[1]:
-            return entry[2], entry[3]
-        return None
-
-    def run_store(self, z: float, output, intervals) -> None:
-        """forward_si の結果を符号別にキャッシュする（z を含む連結成分を保持）。"""
-        try:
-            lo, hi = intervals.find_interval_containing(z)
-        except Exception:
-            return  # z が区間外（通常起きない）は安全側でキャッシュしない
-        self._run[z >= 0] = (lo, hi, output, intervals)
-
-    # ------------------------------------------------------------------
-    # メモ化本体
+    # Memoization core
     # ------------------------------------------------------------------
 
     @staticmethod
     def _key(*arrays: np.ndarray) -> tuple:
-        """係数配列群から決定的なハッシュキーを作る。"""
+        """Build a deterministic hash key from coefficient arrays."""
         parts: list = []
         for a in arrays:
             a = np.ascontiguousarray(a, dtype=float)
@@ -85,30 +64,46 @@ class PolyMemo:
     def batch_intervals(
         self, denominators: np.ndarray, adj_num: np.ndarray, z: float
     ) -> list[RealSubset]:
-        """バッチ有理関数区間のメモ化計算。"""
-        from .poly_utils import _poly_roots, _iso_from_roots, _combine_intervals
+        """Memoized computation of batched rational-function intervals.
+
+        Parameters
+        ----------
+        denominators : np.ndarray, shape (n, deg)
+            Ascending denominator coefficients per row.
+        adj_num : np.ndarray, shape (n, deg)
+            Ascending coefficients of ``numerator - denominator * threshold`` per row.
+        z : float
+            Point around which the sign-preserving intervals are taken.
+
+        Returns
+        -------
+        list of RealSubset
+            One interval per row.
+        """
+        from .poly_utils import poly_roots, iso_from_roots, combine_intervals
 
         key = self._key(denominators, adj_num)
         sign = z >= 0
 
-        # レベルB: 前回区間に z が含まれれば結果をそのまま返す
+        # Level B: if z lies in the cached interval, return the cached result
         region = self._region.get(key)
         if region is not None and sign in region:
             lo, hi, result = region[sign]
             if lo <= z <= hi:
                 return result
 
-        # レベルA: 根は z 不変なのでキャッシュから取得（無ければ計算）
+        # Level A: roots are z-invariant, so fetch from cache (compute if absent)
         roots = self._roots.get(key)
         if roots is None:
-            roots = (_poly_roots(denominators), _poly_roots(adj_num))
+            roots = (poly_roots(denominators), poly_roots(adj_num))
             self._roots[key] = roots
 
-        cond_intervals = _iso_from_roots(roots[0], z)  # (n, 2)
-        adj_intervals = _iso_from_roots(roots[1], z)   # (n, 2)
-        result = _combine_intervals(cond_intervals, adj_intervals)
+        cond_intervals = iso_from_roots(roots[0], z)  # (n, 2)
+        adj_intervals = iso_from_roots(roots[1], z)   # (n, 2)
+        result = combine_intervals(cond_intervals, adj_intervals)
 
-        # 結果が一定となる区間 = 全多項式の iso 区間の積集合（z を含む）
+        # Interval over which the result is constant = intersection of all iso
+        # intervals (contains z)
         lo = max(cond_intervals[:, 0].max(), adj_intervals[:, 0].max())
         hi = min(cond_intervals[:, 1].min(), adj_intervals[:, 1].min())
         self._region.setdefault(key, {})[sign] = (lo, hi, result)
@@ -121,8 +116,23 @@ class PolyMemo:
         z: float,
         threshold: float,
     ) -> RealSubset:
-        """スカラー有理関数区間のメモ化計算（レベルB）。"""
-        from .poly_utils import _calc_polynominal_interval
+        """Memoized computation of a scalar rational-function interval (level B).
+
+        Parameters
+        ----------
+        numerator, denominator : np.ndarray
+            Ascending coefficient vectors.
+        z : float
+            Point around which the sign-preserving interval is taken.
+        threshold : float
+            Comparison threshold.
+
+        Returns
+        -------
+        RealSubset
+            The interval where ``numerator / denominator > threshold``.
+        """
+        from .poly_utils import calc_polynomial_interval_direct
 
         key = self._key(numerator, denominator) + (float(threshold),)
         sign = z >= 0
@@ -133,48 +143,46 @@ class PolyMemo:
             if lo <= z <= hi:
                 return result
 
-        result = _calc_polynominal_interval(numerator, denominator, z, threshold)
+        result = calc_polynomial_interval_direct(numerator, denominator, z, threshold)
 
-        # 結果が一定となる区間を求める: z が解集合内ならその区間、
-        # 解集合外なら補集合側の区間（いずれも隣接根に挟まれた一定領域）
+        # Find the interval over which the result is constant: if z is inside the
+        # solution set use that interval, otherwise use the complementary interval
+        # (both are constant regions bounded by adjacent roots).
         try:
             lo, hi = result.find_interval_containing(z)
         except Exception:
             try:
                 lo, hi = (~result).find_interval_containing(z)
             except Exception:
-                lo, hi = z, z  # 安全側: キャッシュ再利用しない
+                lo, hi = z, z  # safe fallback: do not reuse the cache
         self._region.setdefault(key, {})[sign] = (lo, hi, result)
         return result
 
 
-# モジュールレベルのシングルトン
+# Module-level singleton
 _MEMO = PolyMemo()
 
 
 def is_enabled() -> bool:
+    """Return whether memoization is enabled."""
     return _MEMO.is_enabled()
 
 
 def set_enabled(flag: bool) -> None:
+    """Enable or disable memoization globally."""
     _MEMO.set_enabled(flag)
 
 
 def reset() -> None:
+    """Clear all caches."""
     _MEMO.reset()
 
 
 def batch_intervals(denominators, adj_num, z):
+    """Module-level wrapper for :meth:`PolyMemo.batch_intervals`."""
     return _MEMO.batch_intervals(denominators, adj_num, z)
 
 
 def scalar_interval(numerator, denominator, z, threshold):
+    """Module-level wrapper for :meth:`PolyMemo.scalar_interval`."""
     return _MEMO.scalar_interval(numerator, denominator, z, threshold)
-
-
-def run_lookup(z):
-    return _MEMO.run_lookup(z)
-
-
-def run_store(z, output, intervals):
-    _MEMO.run_store(z, output, intervals)

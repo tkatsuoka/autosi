@@ -20,6 +20,9 @@ def lasso(y, X_train, n_samples, n_features):
     alpha = si.array(0.1)
     max_iter = si.array(1000)
     tol = si.array(1e-4)
+    # sklearn と同じ規約 (1/(2n))RSS + α|β|₁ の座標降下法。
+    # 更新式は beta_j = S(x_j^T r / n, α) / (x_j^T x_j / n)
+    col_sq_mean = si.sum(X_train ** 2, axis=0) / n_samples
     coef = si.array(np.zeros(n_features))
 
     for iteration in range(max_iter):
@@ -29,12 +32,11 @@ def lasso(y, X_train, n_samples, n_features):
             y_pred = X_train @ coef
             residual = y - y_pred + coef[j] * X_train[:, j]
             rho = X_train[:, j] @ residual / n_samples
-            lambda_val = alpha / n_samples
 
-            if rho < -lambda_val:
-                coef[j] = rho + lambda_val
-            elif rho > lambda_val:
-                coef[j] = rho - lambda_val
+            if rho < -alpha:
+                coef[j] = (rho + alpha) / col_sq_mean[j]
+            elif rho > alpha:
+                coef[j] = (rho - alpha) / col_sq_mean[j]
             else:
                 coef[j] = si.array(0.0)
 

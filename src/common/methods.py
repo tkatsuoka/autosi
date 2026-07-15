@@ -23,9 +23,13 @@ def marginal_screening(y, X):
 
 
 def _lasso_coordinate_descent(y, X, n_samples, n_features, lam, max_iter, tol):
-    """座標降下法で Lasso 係数を解く (soft-thresholding)。"""
+    """座標降下法で Lasso 係数を解く (soft-thresholding)。
+
+    目的関数は sklearn と同じ規約 (1/(2n))||y - X beta||^2 + lam * ||beta||_1。
+    lam の意味がサンプル数 n に依存しないため、n を振る実験でも
+    正則化の強さが揃う。
+    """
     col_sq_mean = si.sum(X ** 2, axis=0) / n_samples
-    lambda_val = lam / n_samples
     coef = si.array(np.zeros(n_features))
 
     for _ in range(max_iter):
@@ -34,10 +38,10 @@ def _lasso_coordinate_descent(y, X, n_samples, n_features, lam, max_iter, tol):
             # j 番目を除いた部分残差に対する単回帰係数
             r_j = y - X @ coef + X[:, j] * coef[j]
             z_j = X[:, j] @ r_j / n_samples
-            if z_j > lambda_val:
-                coef[j] = (z_j - lambda_val) / col_sq_mean[j]
-            elif z_j < -lambda_val:
-                coef[j] = (z_j + lambda_val) / col_sq_mean[j]
+            if z_j > lam:
+                coef[j] = (z_j - lam) / col_sq_mean[j]
+            elif z_j < -lam:
+                coef[j] = (z_j + lam) / col_sq_mean[j]
             else:
                 coef[j] = si.array(0.0)
         if si.sum(si.abs(coef - coef_old)) < tol:

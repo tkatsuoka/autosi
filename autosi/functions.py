@@ -5,204 +5,220 @@ import builtins
 import numpy as np
 
 from .siarray import siarray
-from .interval_tracker import IntervalTracker
-from .poly_utils import calc_polynominal_intervals_batch
+from .constraints import add_order_constraints
 
 
-def _batch_order_constraints(
-    tracker: IntervalTracker, diffs: list[siarray], z: float
-) -> None:
-    """差分 siarray のリストをバッチ処理して tracker に制約を追加する。
+def _selection_diffs(x, sel_key, other_keys, want_min):
+    """Build the list of difference siarrays between the selected and other elements.
 
-    _add_order_constraint を n 回呼ぶ代わりに calc_polynominal_intervals_batch で一括処理。
+    ``max`` / ``argmax`` impose ``selected - other > 0``; ``min`` imposes
+    ``other - selected > 0``.
+
+    Parameters
+    ----------
+    x : siarray
+        Source array.
+    sel_key : tuple
+        Index of the selected element.
+    other_keys : list of tuple
+        Indices of the other elements.
+    want_min : bool
+        Whether the selection is a minimum.
+
+    Returns
+    -------
+    list of siarray
+        Scalar-valued difference rational functions.
     """
-    if not diffs:
-        return
-    d_num = builtins.max(len(d.coef_num) for d in diffs)
-    d_den = builtins.max(len(d.coef_den) for d in diffs)
-    n = len(diffs)
-    nums = np.zeros((n, d_num))
-    dens = np.zeros((n, d_den))
-    for i, diff in enumerate(diffs):
-        for k, c in enumerate(diff.coef_num):
-            nums[i, k] = float(c)
-        for k, c in enumerate(diff.coef_den):
-            dens[i, k] = float(c)
-    for interval in calc_polynominal_intervals_batch(nums, dens, z):
-        tracker.update(interval)
+    if want_min:
+        return [x[k] - x[sel_key] for k in other_keys]
+    return [x[sel_key] - x[k] for k in other_keys]
+
+
+def _reduce_select(x, axis, keepdims, *, want_min, return_index):
+    """Shared implementation of ``max`` / ``min`` / ``argmax``.
+
+    Tracks the interval over which the selection (max or min) result is unchanged,
+    then returns the selected index when ``return_index`` is True, or the selected
+    value otherwise.
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+    axis : int or None
+        Axis to reduce over. ``None`` reduces over all elements.
+    keepdims : bool
+        Whether to keep the reduced axis as size 1 (value path only).
+    want_min : bool
+        Select the minimum instead of the maximum.
+    return_index : bool
+        Return the selected index instead of the selected value.
+
+    Returns
+    -------
+    siarray
+        Selected value(s) or index/indices.
+    """
+    if not isinstance(x, siarray):
+        x = siarray(x)
+
+    argext = np.argmin if want_min else np.argmax
+
+    # --- Reduce over all elements ---
+    if axis is None:
+        flat_data = x.data.flatten()
+        sel_idx = int(argext(flat_data))
+        sel_key = np.unravel_index(sel_idx, x.shape)
+        other_keys = [
+            np.unravel_index(i, x.shape)
+            for i in range(len(flat_data)) if i != sel_idx
+        ]
+        add_order_constraints(_selection_diffs(x, sel_key, other_keys, want_min))
+        return siarray(np.array(sel_idx)) if return_index else x[sel_key]
+
+    # --- Reduce along a specific axis ---
+    if axis < 0:
+        axis = len(x.shape) + axis
+    sel_indices = argext(x.data, axis=axis)
+
+    if return_index:
+        # Only track constraints and return indices (no value gathering needed)
+        for idx in np.ndindex(sel_indices.shape if sel_indices.shape else (1,)):
+            sel_pos = int(sel_indices[idx]) if sel_indices.shape else int(sel_indices)
+            sel_key = tuple(list(idx[:axis]) + [sel_pos] + list(idx[axis:]))
+            other_keys = [
+                tuple(list(idx[:axis]) + [i] + list(idx[axis:]))
+                for i in range(x.shape[axis]) if i != sel_pos
+            ]
+            add_order_constraints(_selection_diffs(x, sel_key, other_keys, want_min))
+        return siarray(sel_indices)
+
+    # Return values: track constraints and gather the selected coefficients
+    if keepdims:
+        result_shape = list(x.shape)
+        result_shape[axis] = 1
+    else:
+        result_shape = tuple(s for i, s in enumerate(x.shape) if i != axis)
+
+    shape_init = result_shape if result_shape else (1,)
+    result_num = [np.zeros(shape_init) for _ in x.coef_num]
+    result_den = [np.zeros(shape_init) for _ in x.coef_den]
+
+    for idx in np.ndindex(sel_indices.shape):
+        sel_pos = sel_indices[idx]
+        sel_key = tuple(list(idx[:axis]) + [sel_pos] + list(idx[axis:]))
+        other_keys = [
+            tuple(list(idx[:axis]) + [i] + list(idx[axis:]))
+            for i in range(x.shape[axis]) if i != sel_pos
+        ]
+        add_order_constraints(_selection_diffs(x, sel_key, other_keys, want_min))
+        dst_idx = (
+            idx if not keepdims
+            else tuple(list(idx[:axis]) + [0] + list(idx[axis:]))
+        )
+        for deg in range(len(x.coef_num)):
+            result_num[deg][dst_idx] = x.coef_num[deg][sel_key]
+        for deg in range(len(x.coef_den)):
+            result_den[deg][dst_idx] = x.coef_den[deg][sel_key]
+
+    return siarray.from_rational(result_num, result_den)
 
 
 def max(x, axis=None, keepdims=False):
-    """最大値（siarray対応）"""
-    if not isinstance(x, siarray):
-        x = siarray(x)
-
-    tracker = IntervalTracker.get_instance()
-    z = tracker.get_z()
-
-    if axis is None:
-        flat_data = x.data.flatten()
-        max_idx = int(np.argmax(flat_data))
-        max_key = np.unravel_index(max_idx, x._shape)
-        diffs = [
-            x[max_key] - x[np.unravel_index(i, x._shape)]
-            for i in range(len(flat_data)) if i != max_idx
-        ]
-        _batch_order_constraints(tracker, diffs, z)
-        return x[max_key]
-
-    if axis < 0:
-        axis = len(x._shape) + axis
-    max_indices = np.argmax(x.data, axis=axis)
-
-    if keepdims:
-        result_shape = list(x._shape)
-        result_shape[axis] = 1
-    else:
-        result_shape = tuple(s for i, s in enumerate(x._shape) if i != axis)
-
-    shape_init = result_shape if result_shape else (1,)
-    result_num = [np.zeros(shape_init) for _ in x.coef_num]
-    result_den = [np.zeros(shape_init) for _ in x.coef_den]
-
-    for idx in np.ndindex(max_indices.shape):
-        max_pos = max_indices[idx]
-        src_idx = tuple(list(idx[:axis]) + [max_pos] + list(idx[axis:]))
-        diffs = [
-            x[src_idx] - x[tuple(list(idx[:axis]) + [i] + list(idx[axis:]))]
-            for i in range(x._shape[axis]) if i != max_pos
-        ]
-        _batch_order_constraints(tracker, diffs, z)
-        dst_idx = (
-            idx if not keepdims
-            else tuple(list(idx[:axis]) + [0] + list(idx[axis:]))
-        )
-        for deg in range(len(x.coef_num)):
-            result_num[deg][dst_idx] = x.coef_num[deg][src_idx]
-        for deg in range(len(x.coef_den)):
-            result_den[deg][dst_idx] = x.coef_den[deg][src_idx]
-
-    return siarray.from_rational(result_num, result_den)
+    """Maximum (siarray-aware)."""
+    return _reduce_select(x, axis, keepdims, want_min=False, return_index=False)
 
 
 def min(x, axis=None, keepdims=False):
-    """最小値（siarray対応）"""
-    if not isinstance(x, siarray):
-        x = siarray(x)
-
-    tracker = IntervalTracker.get_instance()
-    z = tracker.get_z()
-
-    if axis is None:
-        flat_data = x.data.flatten()
-        min_idx = int(np.argmin(flat_data))
-        min_key = np.unravel_index(min_idx, x._shape)
-        diffs = [
-            x[np.unravel_index(i, x._shape)] - x[min_key]
-            for i in range(len(flat_data)) if i != min_idx
-        ]
-        _batch_order_constraints(tracker, diffs, z)
-        return x[min_key]
-
-    if axis < 0:
-        axis = len(x._shape) + axis
-    min_indices = np.argmin(x.data, axis=axis)
-
-    if keepdims:
-        result_shape = list(x._shape)
-        result_shape[axis] = 1
-    else:
-        result_shape = tuple(s for i, s in enumerate(x._shape) if i != axis)
-
-    shape_init = result_shape if result_shape else (1,)
-    result_num = [np.zeros(shape_init) for _ in x.coef_num]
-    result_den = [np.zeros(shape_init) for _ in x.coef_den]
-
-    for idx in np.ndindex(min_indices.shape):
-        min_pos = min_indices[idx]
-        src_idx = tuple(list(idx[:axis]) + [min_pos] + list(idx[axis:]))
-        diffs = [
-            x[tuple(list(idx[:axis]) + [i] + list(idx[axis:]))] - x[src_idx]
-            for i in range(x._shape[axis]) if i != min_pos
-        ]
-        _batch_order_constraints(tracker, diffs, z)
-        dst_idx = (
-            idx if not keepdims
-            else tuple(list(idx[:axis]) + [0] + list(idx[axis:]))
-        )
-        for deg in range(len(x.coef_num)):
-            result_num[deg][dst_idx] = x.coef_num[deg][src_idx]
-        for deg in range(len(x.coef_den)):
-            result_den[deg][dst_idx] = x.coef_den[deg][src_idx]
-
-    return siarray.from_rational(result_num, result_den)
+    """Minimum (siarray-aware)."""
+    return _reduce_select(x, axis, keepdims, want_min=True, return_index=False)
 
 
 def argmax(x, axis=None):
-    """argmax（siarray対応）"""
-    if not isinstance(x, siarray):
-        x = siarray(x)
+    """Index of the maximum (siarray-aware)."""
+    return _reduce_select(x, axis, keepdims=False, want_min=False, return_index=True)
 
-    tracker = IntervalTracker.get_instance()
-    z = tracker.get_z()
 
-    if axis is None:
-        flat_data = x.data.flatten()
-        max_idx = int(np.argmax(flat_data))
-        max_key = np.unravel_index(max_idx, x._shape)
-        diffs = [
-            x[max_key] - x[np.unravel_index(i, x._shape)]
-            for i in range(len(flat_data)) if i != max_idx
-        ]
-        _batch_order_constraints(tracker, diffs, z)
-        return siarray(np.array(max_idx))
-
-    if axis < 0:
-        axis = len(x._shape) + axis
-    max_indices = np.argmax(x.data, axis=axis)
-
-    for idx in np.ndindex(max_indices.shape if max_indices.shape else (1,)):
-        max_pos = int(max_indices[idx]) if max_indices.shape else int(max_indices)
-        src_idx = tuple(list(idx[:axis]) + [max_pos] + list(idx[axis:]))
-        diffs = [
-            x[src_idx] - x[tuple(list(idx[:axis]) + [i] + list(idx[axis:]))]
-            for i in range(x._shape[axis]) if i != max_pos
-        ]
-        _batch_order_constraints(tracker, diffs, z)
-
-    return siarray(max_indices)
+def argmin(x, axis=None):
+    """Index of the minimum (siarray-aware)."""
+    return _reduce_select(x, axis, keepdims=False, want_min=True, return_index=True)
 
 
 def mean(x, axis=None, keepdims=False):
-    """平均（siarray対応）"""
+    """Mean (siarray-aware)."""
     if not isinstance(x, siarray):
         x = siarray(x)
     return x.mean(axis=axis, keepdims=keepdims)
 
 
 def sum(x, axis=None, keepdims=False):
-    """合計（siarray対応）"""
+    """Sum (siarray-aware)."""
     if not isinstance(x, siarray):
         x = siarray(x)
     return x.sum(axis=axis, keepdims=keepdims)
 
 
+def var(x, axis=None, keepdims=False, ddof=0):
+    """Variance (siarray-aware)."""
+    if not isinstance(x, siarray):
+        x = siarray(x)
+    return x.var(axis=axis, keepdims=keepdims, ddof=ddof)
+
+
+def prod(x, axis=None, keepdims=False):
+    """Product (siarray-aware)."""
+    if not isinstance(x, siarray):
+        x = siarray(x)
+    return x.prod(axis=axis, keepdims=keepdims)
+
+
+def sort(x, axis=-1, kind=None, order=None):
+    """Sorted values (siarray-aware)."""
+    if not isinstance(x, siarray):
+        x = siarray(x)
+    return x.sort(axis=axis, kind=kind, order=order)
+
+
+def flatten(x):
+    """1-D copy of the array (siarray-aware)."""
+    if not isinstance(x, siarray):
+        x = siarray(x)
+    return x.flatten()
+
+
 def abs(x):
-    """絶対値（siarray対応）"""
+    """Absolute value (siarray-aware)."""
     if not isinstance(x, siarray):
         x = siarray(x)
     return x.__abs__()
 
 
 def argsort(x, axis=-1, kind=None, order=None):
-    """ソートのインデックス（siarray対応）"""
+    """Sort indices (siarray-aware)."""
     if not isinstance(x, siarray):
         x = siarray(x)
     return x.argsort(axis=axis, kind=kind, order=order)
 
 
 def stack(arrays: list[siarray], axis: int = 0) -> siarray:
-    """siarrayのスタック"""
+    """Stack siarrays along a new axis.
+
+    Coefficient lists of differing length are zero-padded (numerators) or one-padded
+    (denominators) before stacking.
+
+    Parameters
+    ----------
+    arrays : list of siarray
+        Arrays to stack (must be non-empty).
+    axis : int, optional
+        Axis along which to stack (default 0).
+
+    Returns
+    -------
+    siarray
+        The stacked array.
+    """
     if not arrays:
         raise ValueError("arrays must not be empty")
 
@@ -235,6 +251,56 @@ def stack(arrays: list[siarray], axis: int = 0) -> siarray:
     return siarray.from_rational(stacked_num, stacked_den)
 
 
+def concatenate(arrays: list[siarray], axis: int = 0) -> siarray:
+    """Join siarrays along an existing axis.
+
+    Coefficient lists of differing length are zero-padded (numerators) or one-padded
+    (denominators) before concatenation.
+
+    Parameters
+    ----------
+    arrays : list of siarray
+        Arrays to concatenate (must be non-empty).
+    axis : int, optional
+        Axis along which to concatenate (default 0).
+
+    Returns
+    -------
+    siarray
+        The concatenated array.
+    """
+    if not arrays:
+        raise ValueError("arrays must not be empty")
+
+    max_num_deg = builtins.max(len(arr.coef_num) for arr in arrays)
+    max_den_deg = builtins.max(len(arr.coef_den) for arr in arrays)
+
+    cat_num = [
+        np.concatenate(
+            [
+                arr.coef_num[deg] if deg < len(arr.coef_num)
+                else np.zeros_like(arr.coef_num[0])
+                for arr in arrays
+            ],
+            axis=axis,
+        )
+        for deg in range(max_num_deg)
+    ]
+    cat_den = [
+        np.concatenate(
+            [
+                arr.coef_den[deg] if deg < len(arr.coef_den)
+                else np.ones_like(arr.coef_den[0])
+                for arr in arrays
+            ],
+            axis=axis,
+        )
+        for deg in range(max_den_deg)
+    ]
+
+    return siarray.from_rational(cat_num, cat_den)
+
+
 def array(X) -> siarray:
-    """siarray を作成する便利関数"""
+    """Convenience constructor for siarray."""
     return siarray(X)

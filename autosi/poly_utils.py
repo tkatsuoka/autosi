@@ -8,7 +8,20 @@ from sicore import RealSubset, polynomial_iso_sign_interval
 
 
 def poly_add(p1: list[np.ndarray], p2: list[np.ndarray]) -> list[np.ndarray]:
-    """多項式の加算（長い方に短い方を加算してコピーを最小化）"""
+    """Add two polynomials.
+
+    Adds the shorter operand into a copy of the longer one to minimize copies.
+
+    Parameters
+    ----------
+    p1, p2 : list of np.ndarray
+        Ascending coefficient lists (``p[i]`` is the coefficient of ``z**i``).
+
+    Returns
+    -------
+    list of np.ndarray
+        Coefficients of ``p1 + p2``.
+    """
     d1, d2 = len(p1), len(p2)
     if d1 >= d2:
         result = [c.copy() for c in p1]
@@ -22,7 +35,18 @@ def poly_add(p1: list[np.ndarray], p2: list[np.ndarray]) -> list[np.ndarray]:
 
 
 def poly_sub(p1: list[np.ndarray], p2: list[np.ndarray]) -> list[np.ndarray]:
-    """多項式の減算"""
+    """Subtract two polynomials.
+
+    Parameters
+    ----------
+    p1, p2 : list of np.ndarray
+        Ascending coefficient lists.
+
+    Returns
+    -------
+    list of np.ndarray
+        Coefficients of ``p1 - p2``.
+    """
     d1, d2 = len(p1), len(p2)
     n = builtins.max(d1, d2)
     result = []
@@ -34,15 +58,25 @@ def poly_sub(p1: list[np.ndarray], p2: list[np.ndarray]) -> list[np.ndarray]:
 
 
 def poly_mul(p1: list[np.ndarray], p2: list[np.ndarray]) -> list[np.ndarray]:
-    """多項式の乗算（NumPyベクトル化版）
+    """Multiply two polynomials (vectorized).
 
-    - 次数0同士: 直接乗算
-    - スカラー係数: np.convolve で高速計算
-    - 配列係数: 内側ループをスライス加算でベクトル化（O(d1) Pythonループ）
+    Uses three paths: direct product for two constants, ``np.convolve`` for scalar
+    coefficients, and slice-wise accumulation (an ``O(d1)`` Python loop) for array
+    coefficients.
+
+    Parameters
+    ----------
+    p1, p2 : list of np.ndarray
+        Ascending coefficient lists.
+
+    Returns
+    -------
+    list of np.ndarray
+        Coefficients of ``p1 * p2``.
     """
     d1, d2 = len(p1), len(p2)
 
-    # 定数×定数の最速パス
+    # Fast path: constant times constant
     if d1 == 1 and d2 == 1:
         return [p1[0] * p2[0]]
 
@@ -50,86 +84,101 @@ def poly_mul(p1: list[np.ndarray], p2: list[np.ndarray]) -> list[np.ndarray]:
     shape1 = np.asarray(p1[0]).shape
     shape2 = np.asarray(p2[0]).shape
 
-    # 両方スカラー係数: np.convolve（FFTベース）で高速計算
+    # Both scalar coefficients: use np.convolve (FFT-based)
     if shape1 == () and shape2 == ():
         a = np.array([float(c) for c in p1])
         b = np.array([float(c) for c in p2])
         conv = np.convolve(a, b)
         return [np.array(conv[k]) for k in range(n)]
 
-    # 配列係数: 内側ループをスライス加算でベクトル化
-    # result[i+j] += p1[i] * p2[j] → result[i:i+d2] += p1[i] * stacked_p2
+    # Array coefficients: vectorize the inner loop with slice-wise addition,
+    # i.e. result[i+j] += p1[i] * p2[j] -> result[i:i+d2] += p1[i] * stacked_p2
     shape = np.broadcast_shapes(shape1, shape2)
     a = np.asarray(p1)  # (d1, *shape1)
     b = np.asarray(p2)  # (d2, *shape2)
     dtype = np.result_type(a.dtype, b.dtype)
     result = np.zeros((n, *shape), dtype=dtype)
 
-    # a[i] * b が result のスライスとブロードキャストできるよう次元を揃える
-    # 例: shape1=(n,), shape2=() → b は (d2,) → (d2, 1) に reshape
+    # Align dimensions so a[i] * b broadcasts against the result slice,
+    # e.g. shape1=(n,), shape2=() -> b is (d2,) -> reshape to (d2, 1)
     ndim_diff = len(shape1) - len(shape2)
     if ndim_diff > 0:
         b = b.reshape((d2,) + shape2 + (1,) * ndim_diff)
 
     for i in range(d1):
-        result[i : i + d2] += a[i] * b  # inner loop を排除
+        result[i : i + d2] += a[i] * b  # inner loop eliminated
     return [result[k] for k in range(n)]
 
 
 def _denoms_equal(d1: list[np.ndarray], d2: list[np.ndarray]) -> bool:
-    """2つの分母多項式が等しいかを判定"""
+    """Return whether two denominator polynomials are equal."""
     if len(d1) != len(d2):
         return False
     return all(np.array_equal(a, b) for a, b in zip(d1, d2))
 
 
 def _denom_is_one(coef_den: list[np.ndarray]) -> bool:
-    """分母が定数1（すべての要素が1.0の次数0多項式）かを判定"""
+    """Return whether the denominator is the constant 1 (degree-0, all ones)."""
     return len(coef_den) == 1 and np.allclose(coef_den[0], 1.0)
 
 
-def _poly_roots(coefs: np.ndarray) -> tuple:
-    """複数多項式の根（z 非依存）を計算する。
+def poly_roots(coefs: np.ndarray) -> tuple:
+    """Compute the roots of several polynomials (independent of ``z``).
 
-    根は z に依存しないため、forward_si の z 反復間でキャッシュできる
-    （メモ化レベルA）。区間への変換は _iso_from_roots が z ごとに行う。
+    The roots do not depend on ``z``, so they can be cached across the ``z``
+    iterations of ``forward_si`` (memoization level A). Conversion to an interval is
+    done per ``z`` by :func:`iso_from_roots`.
 
-    Args:
-        coefs: shape (n, d+1)、各行が1つの多項式の昇順係数
-    Returns:
-        ("const", n) | ("linear", roots(n,)) | ("poly", real_roots(n, d))
+    Parameters
+    ----------
+    coefs : np.ndarray, shape (n, d+1)
+        Each row holds the ascending coefficients of one polynomial.
+
+    Returns
+    -------
+    tuple
+        ``("const", n)``, ``("linear", roots(n,))`` or ``("poly", real_roots(n, d))``.
     """
     n, d1 = coefs.shape
     d = d1 - 1
 
     if d == 0:
-        return ("const", n)  # 定数多項式: 根なし → (-inf, inf)
+        return ("const", n)  # constant polynomial: no roots -> (-inf, inf)
 
     if d == 1:
-        # 線形: root = -a/b（解析解で最速）
+        # Linear: root = -a/b (closed form, fastest)
         a, b = coefs[:, 0], coefs[:, 1]
         valid = np.abs(b) > 1e-15
         roots = np.where(valid, -a / np.where(valid, b, 1.0), np.nan)
         return ("linear", roots)
 
-    # 高次: コンパニオン行列の固有値をバッチ計算
-    # companion[k, 1:, :-1] = I(d-1)、companion[k, :, -1] = -coef[k, :-1] / leading[k]
+    # Higher degree: batch eigenvalues of the companion matrices.
+    # companion[k, 1:, :-1] = I(d-1), companion[k, :, -1] = -coef[k, :-1] / leading[k]
     leading = coefs[:, -1]
     C = np.zeros((n, d, d))
-    C[:, 1:, :-1] = np.eye(d - 1)  # サブ対角線の1（全ポリノミアル共通）
+    C[:, 1:, :-1] = np.eye(d - 1)  # sub-diagonal ones (shared by all polynomials)
     safe_leading = np.where(np.abs(leading) > 1e-15, leading, 1.0)
     C[:, :, -1] = -coefs[:, :-1] / safe_leading[:, np.newaxis]
 
-    eigenvalues = np.linalg.eigvals(C)  # (n, d) complex、バッチ固有値計算
-    # polynomial_iso_sign_interval に合わせて複素根の実部もそのまま使用
+    eigenvalues = np.linalg.eigvals(C)  # (n, d) complex, batched
+    # Use the real part of complex roots, matching polynomial_iso_sign_interval
     return ("poly", eigenvalues.real)
 
 
-def _iso_from_roots(roots: tuple, z: float) -> np.ndarray:
-    """事前計算した根から z における iso-sign 区間を求める（メモ化レベルA）。
+def iso_from_roots(roots: tuple, z: float) -> np.ndarray:
+    """Build the iso-sign interval at ``z`` from precomputed roots (level A).
 
-    Returns:
-        shape (n, 2) の配列 [[lower, upper], ...]
+    Parameters
+    ----------
+    roots : tuple
+        Output of :func:`poly_roots`.
+    z : float
+        Point around which the sign-preserving interval is taken.
+
+    Returns
+    -------
+    np.ndarray, shape (n, 2)
+        Rows ``[lower, upper]`` for each polynomial.
     """
     kind = roots[0]
     if kind == "const":
@@ -152,13 +201,13 @@ def _iso_from_roots(roots: tuple, z: float) -> np.ndarray:
     result[:, 0] = -np.inf
     result[:, 1] = np.inf
 
-    # z 未満の最大根 → lower bound
+    # Largest root below z -> lower bound
     below = np.where(real_roots < z - 1e-10, real_roots, np.nan)
     has_below = ~np.all(np.isnan(below), axis=1)
     if has_below.any():
         result[has_below, 0] = np.nanmax(below[has_below], axis=1)
 
-    # z 超過の最小根 → upper bound
+    # Smallest root above z -> upper bound
     above = np.where(real_roots > z + 1e-10, real_roots, np.nan)
     has_above = ~np.all(np.isnan(above), axis=1)
     if has_above.any():
@@ -168,21 +217,39 @@ def _iso_from_roots(roots: tuple, z: float) -> np.ndarray:
 
 
 def _batch_iso_sign_intervals(coefs: np.ndarray, z: float) -> np.ndarray:
-    """複数の多項式の iso-sign 区間をバッチ計算する（非メモ化パス）。"""
-    return _iso_from_roots(_poly_roots(coefs), z)
+    """Batch-compute iso-sign intervals for several polynomials (non-memoized)."""
+    return iso_from_roots(poly_roots(coefs), z)
 
 
-def calc_polynominal_intervals_batch(
-    numerators: np.ndarray,    # (n, deg_num+1) 昇順係数
-    denominators: np.ndarray,  # (n, deg_den+1) 昇順係数
+def calc_polynomial_intervals_batch(
+    numerators: np.ndarray,    # (n, deg_num+1) ascending coefficients
+    denominators: np.ndarray,  # (n, deg_den+1) ascending coefficients
     z: float,
     threshold: float = 0.0,
 ) -> list[RealSubset]:
-    """n 個の有理関数 num_i/den_i > threshold となる区間をバッチ計算する。
+    """Batch-compute the intervals where ``num_i / den_i > threshold``.
 
-    polynomial_iso_sign_interval を n 回呼ぶ代わりに、バッチ固有値計算で処理する。
-    calc_polynominal_interval の数学的等価バッチ版:
-      iso_sign(den, z) & iso_sign(num - den*threshold, z)
+    Instead of calling ``polynomial_iso_sign_interval`` ``n`` times, this processes
+    all rows with batched eigenvalue computation. It is the batched, mathematically
+    equivalent counterpart of :func:`calc_polynomial_interval`::
+
+        iso_sign(den, z) & iso_sign(num - den * threshold, z)
+
+    Parameters
+    ----------
+    numerators : np.ndarray, shape (n, deg_num+1)
+        Ascending numerator coefficients per row.
+    denominators : np.ndarray, shape (n, deg_den+1)
+        Ascending denominator coefficients per row.
+    z : float
+        Point around which the sign-preserving intervals are taken.
+    threshold : float, optional
+        Comparison threshold (default 0.0).
+
+    Returns
+    -------
+    list of RealSubset
+        One interval per row.
     """
     d_num, d_den = numerators.shape[1], denominators.shape[1]
     d_max = max(d_num, d_den)
@@ -193,20 +260,32 @@ def calc_polynominal_intervals_batch(
 
     adj_num = numerators - denominators * threshold
 
-    # メモ化が有効なら根・区間キャッシュ経由で計算（z 反復間の再計算を削減）
+    # When memoization is enabled, go through the root/interval caches to avoid
+    # recomputation across z iterations.
     from . import poly_memo
     if poly_memo.is_enabled() and z is not None:
         return poly_memo.batch_intervals(denominators, adj_num, z)
 
-    # 2回のバッチ計算で n 要素分をまとめて処理
+    # Two batched calls handle all n rows at once.
     cond_intervals = _batch_iso_sign_intervals(denominators, z)  # (n, 2)
     adj_intervals  = _batch_iso_sign_intervals(adj_num, z)        # (n, 2)
 
-    return _combine_intervals(cond_intervals, adj_intervals)
+    return combine_intervals(cond_intervals, adj_intervals)
 
 
-def _combine_intervals(cond_intervals: np.ndarray, adj_intervals: np.ndarray) -> list[RealSubset]:
-    """denominator 条件区間と分子区間の積集合をn要素分まとめて返す。"""
+def combine_intervals(cond_intervals: np.ndarray, adj_intervals: np.ndarray) -> list[RealSubset]:
+    """Intersect denominator-condition and numerator intervals row by row.
+
+    Parameters
+    ----------
+    cond_intervals, adj_intervals : np.ndarray, shape (n, 2)
+        Rows ``[lower, upper]``.
+
+    Returns
+    -------
+    list of RealSubset
+        Per-row intersection.
+    """
     return [
         RealSubset([cond_intervals[i].tolist()]) & RealSubset([adj_intervals[i].tolist()])
         for i in range(len(cond_intervals))
@@ -214,7 +293,7 @@ def _combine_intervals(cond_intervals: np.ndarray, adj_intervals: np.ndarray) ->
 
 
 def _poly_gcd_1d(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """1次元多項式のGCDをユークリッドアルゴリズムで計算（昇順係数、モニック正規化）"""
+    """Compute the GCD of two 1-D polynomials (Euclid, ascending, monic)."""
     a = np.atleast_1d(polytrim(np.asarray(a, dtype=float)))
     b = np.atleast_1d(polytrim(np.asarray(b, dtype=float)))
 
@@ -223,7 +302,7 @@ def _poly_gcd_1d(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         r = np.atleast_1d(polytrim(r))
         a, b = b, r
 
-    # モニック正規化（先頭係数を1に）
+    # Normalize to monic (leading coefficient 1)
     if len(a) > 0 and not np.isclose(a[-1], 0, atol=1e-10):
         a = a / a[-1]
     return a if len(a) > 0 else np.array([1.0])
@@ -232,13 +311,23 @@ def _poly_gcd_1d(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 def poly_reduce(
     num: list[np.ndarray], den: list[np.ndarray]
 ) -> tuple[list[np.ndarray], list[np.ndarray]]:
-    """有理多項式を既約分数に簡約化する。
+    """Reduce a rational polynomial to lowest terms.
 
-    以下の場合は即座にそのまま返す（オーバーヘッドを最小化）:
-    - num か den のどちらかが定数（degree 0）→ GCDは必ず定数
-    スカラー係数と配列係数の両方に対応。
+    Returns the inputs unchanged when either side is a constant (degree 0), because
+    the GCD is then necessarily a constant. Handles both scalar and array
+    coefficients.
+
+    Parameters
+    ----------
+    num, den : list of np.ndarray
+        Ascending numerator/denominator coefficient lists.
+
+    Returns
+    -------
+    tuple of (list of np.ndarray, list of np.ndarray)
+        Reduced ``(num, den)``.
     """
-    # どちらかが定数なら多項式GCDは常に定数 → 約分不要
+    # If either side is constant, the polynomial GCD is constant -> no reduction
     if len(num) <= 1 or len(den) <= 1:
         return num, den
 
@@ -253,7 +342,7 @@ def poly_reduce(
 def _poly_reduce_scalar(
     num: list[np.ndarray], den: list[np.ndarray]
 ) -> tuple[list[np.ndarray], list[np.ndarray]]:
-    """スカラー係数の有理多項式を約分（既存の高速パス）"""
+    """Reduce a scalar-coefficient rational polynomial (fast path)."""
     a = np.array([float(c) for c in num])
     b = np.array([float(c) for c in den])
     gcd = _poly_gcd_1d(a, b)
@@ -280,14 +369,26 @@ def _poly_reduce_scalar(
 def _poly_reduce_array(
     num: list[np.ndarray], den: list[np.ndarray], shape: tuple
 ) -> tuple[list[np.ndarray], list[np.ndarray]]:
-    """配列係数の有理多項式を要素ごとにGCD約分する。
+    """Reduce an array-coefficient rational polynomial element-wise by GCD.
 
-    各要素を独立にGCD計算し、約分できた要素のみ更新する。
-    約分できた要素が1つもなければ元のリストをそのまま返す。
+    Each element is reduced independently; only elements that actually reduce are
+    updated. If no element reduces, the original lists are returned unchanged.
+
+    Parameters
+    ----------
+    num, den : list of np.ndarray
+        Ascending coefficient lists with array-valued coefficients.
+    shape : tuple
+        Logical shape of the coefficient arrays.
+
+    Returns
+    -------
+    tuple of (list of np.ndarray, list of np.ndarray)
+        Reduced ``(num, den)``.
     """
     n = np.asarray(num[0]).size
 
-    # 係数行列: (n, degree+1) の形式に変換
+    # Coefficient matrices: convert to (n, degree+1)
     nums_mat = np.array([c.flatten() for c in num], dtype=float).T  # (n, d_num)
     dens_mat = np.array([c.flatten() for c in den], dtype=float).T  # (n, d_den)
 
@@ -306,7 +407,7 @@ def _poly_reduce_array(
         gcd_i = _poly_gcd_1d(a_i, b_i)
 
         if len(gcd_i) <= 1:
-            # GCDが定数 → この要素は約分なし
+            # Constant GCD -> this element does not reduce
             new_num_rows.append(a_i)
             new_den_rows.append(b_i)
             continue
@@ -314,7 +415,7 @@ def _poly_reduce_array(
         q_num_i, r_num_i = polydiv(a_i, gcd_i)
         q_den_i, r_den_i = polydiv(b_i, gcd_i)
 
-        # 浮動小数点誤差で割り切れない場合はスキップ
+        # Skip if it does not divide cleanly (floating-point error)
         if not (np.allclose(r_num_i, 0, atol=1e-10) and np.allclose(r_den_i, 0, atol=1e-10)):
             new_num_rows.append(a_i)
             new_den_rows.append(b_i)
@@ -334,7 +435,7 @@ def _poly_reduce_array(
     if not any_reduced:
         return num, den
 
-    # 約分後の最大次数に合わせてパディングし係数リストを再構築
+    # Pad to the post-reduction max degree and rebuild the coefficient lists
     max_d_num = max(len(r) for r in new_num_rows)
     max_d_den = max(len(r) for r in new_den_rows)
 
@@ -350,26 +451,59 @@ def _poly_reduce_array(
     return new_num_list, new_den_list
 
 
-def calc_polynominal_interval(
+def calc_polynomial_interval(
     numerator: np.ndarray,
     denominator: np.ndarray,
     z: float,
     threshold: float = 0.0,
 ) -> RealSubset:
-    """有理関数 > threshold となるzの範囲を計算"""
+    """Compute the range of ``z`` where the rational function exceeds ``threshold``.
+
+    Dispatches to the memoized path when memoization is enabled, otherwise to
+    :func:`calc_polynomial_interval_direct`.
+
+    Parameters
+    ----------
+    numerator, denominator : np.ndarray
+        Ascending coefficient vectors.
+    z : float
+        Point around which the sign-preserving interval is taken.
+    threshold : float, optional
+        Comparison threshold (default 0.0).
+
+    Returns
+    -------
+    RealSubset
+        The interval where ``numerator / denominator > threshold``.
+    """
     from . import poly_memo
     if poly_memo.is_enabled() and z is not None:
         return poly_memo.scalar_interval(numerator, denominator, z, threshold)
-    return _calc_polynominal_interval(numerator, denominator, z, threshold)
+    return calc_polynomial_interval_direct(numerator, denominator, z, threshold)
 
 
-def _calc_polynominal_interval(
+def calc_polynomial_interval_direct(
     numerator: np.ndarray,
     denominator: np.ndarray,
     z: float,
     threshold: float = 0.0,
 ) -> RealSubset:
-    """calc_polynominal_interval の非メモ化実体。"""
+    """Non-memoized implementation behind :func:`calc_polynomial_interval`.
+
+    Parameters
+    ----------
+    numerator, denominator : np.ndarray
+        Ascending coefficient vectors.
+    z : float
+        Point around which the sign-preserving interval is taken.
+    threshold : float, optional
+        Comparison threshold (default 0.0).
+
+    Returns
+    -------
+    RealSubset
+        The interval where ``numerator / denominator > threshold``.
+    """
     if len(numerator) < len(denominator):
         numerator = np.concatenate(
             [numerator, np.zeros(len(denominator) - len(numerator))]
@@ -379,14 +513,14 @@ def _calc_polynominal_interval(
             [denominator, np.zeros(len(numerator) - len(denominator))]
         )
 
-    # denominator > 0 の場合: numerator - denominator * threshold > 0 を解く
+    # Case denominator > 0: solve numerator - denominator * threshold > 0
     pos_cond = RealSubset(polynomial_iso_sign_interval(denominator, z))
     pos_int = RealSubset(
         polynomial_iso_sign_interval(numerator - denominator * threshold, z)
     )
     intervals = pos_cond & pos_int
 
-    # denominator < 0 の場合: numerator - denominator * threshold < 0 を解く
+    # Case denominator < 0: solve numerator - denominator * threshold < 0
     neg_cond = RealSubset(polynomial_iso_sign_interval(-denominator, z))
     neg_int = RealSubset(
         polynomial_iso_sign_interval(denominator * threshold - numerator, z)

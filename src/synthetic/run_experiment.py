@@ -11,17 +11,17 @@ Windows のマルチプロセスに対応するため worker はトップレベ�
 siarray をプロセス間で受け渡さず各 worker 内でデータを生成する。
 
 使い方:
-  python src/run_experiment.py --iter 200 --workers 1
+  python src/synthetic/run_experiment.py --iter 200 --workers 1
 """
 
 import os
 import sys
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 # numpy/BLAS より先に import して各プロセスを 1 スレッドに固定する
 # (他人のコアを奪わないため)。import 時に set_env が走る。
-from src.environment import set_env, set_seed
+from src.common.environment import set_env, set_seed
 
 import time
 import argparse
@@ -34,8 +34,8 @@ import pandas as pd
 from tqdm import tqdm
 
 import autosi as si
-from src.data import generate_data
-from src.methods import marginal_screening, lasso, cv_r2_lasso
+from src.synthetic.data import generate_data
+from src.common.methods import marginal_screening, lasso, cv_r2_lasso
 
 METHODS = ["marginal_screening", "lasso", "cv_r2_lasso"]
 DATA_TYPES = ["iid", "correlated"]
@@ -87,13 +87,25 @@ def run_single(task):
 
         eta = algorithm(y)
 
+        # 観測データで実際に選択された特徴量を復元する。
+        # eta は (XᵀX)⁻¹Xᵀ の選択行なので eta·X ≈ e_idx (選択位置だけ 1) になる。
+        selected_index = int(np.argmax(eta.data @ X_np))
+        # 真の活性特徴量は先頭 n_signal 個 (signal!=0 のときのみ、null では活性なし)。
+        # is_signal=False の棄却は Type I error なので power 集計から除外できる。
+        n_active = min(cfg["n_signal"], cfg["n_features"]) if cfg["signal"] != 0.0 else 0
+        is_signal = bool(selected_index < n_active)
+
         oc_p = si.inference(eta=eta, prob_vec=y, var=Sigma, algorithm=algorithm, inference_mode="over_conditioning").p_value
         start = time.time()
         result = si.inference(eta=eta, prob_vec=y, var=Sigma, algorithm=algorithm)
         elapsed = time.time() - start
 
-        naive_p =  result.naive_p_value()
-        bonferroni_p = result.bonferroni_p_value(log_num_comparisons=cfg["n_features"])
+        naive_p = result.naive_p_value()
+        # sicore の bonferroni_p_value は「比較数の対数」を受け取る。
+        # 比較数は取り得る選択パターンの総数 2^p とし、log(2^p) = p*log(2) を渡す。
+        bonferroni_p = result.bonferroni_p_value(
+            log_num_comparisons=cfg["n_features"] * np.log(2)
+        )
 
         return {
             "method": method,
@@ -108,9 +120,14 @@ def run_single(task):
             "n_features": cfg["n_features"],
             "signal": cfg["signal"],
             "n_signal": cfg["n_signal"],
+            # power を「実際に信号が載った特徴量が選ばれた試行」のみで測るための情報
+            "selected_index": selected_index,
+            "is_signal": is_signal,
         }
     except Exception:
-        # 1 試行の失敗で全体を止めないようログだけ残して None を返す。
+        # 1 試行の失敗 (数値誤差など) で全体を止めない。ログを残して次へ進む。
+        print(f"[skip] method={method} data_type={data_type} seed={seed} "
+              "が失敗 (次の試行へ続行)", file=sys.stderr)
         traceback.print_exc()
         return None
 
@@ -131,8 +148,8 @@ def main():
     parser.add_argument("--seed_offset", type=int, default=0,
                         help="全 seed に加える定数。手法ごとに変えると "
                              "手法間で異なるデータになり独立性が保てる")
-    parser.add_argument("--n_samples", type=int, default=400)
-    parser.add_argument("--n_features", type=int, default=10,
+    parser.add_argument("--n_samples", type=int, default=200)
+    parser.add_argument("--n_features", type=int, default=20,
                         help="特徴量数 p")
     parser.add_argument("--signal", type=float, default=0.0,
                         help="真の係数の傾き Δ (0=null/FPR, >0=power)")
@@ -140,7 +157,9 @@ def main():
                         help="信号を載せる先頭特徴量の数")
     parser.add_argument("--out", type=str, default="result/experiment_results.csv")
     # lasso / cv 共通ハイパラ
-    parser.add_argument("--alpha", type=float, default=0.1)
+    parser.add_argument("--alpha", type=float, default=0.1,
+                        help="Lasso 正則化係数 (sklearn と同じ "
+                             "(1/(2n))RSS + alpha*|beta|_1 規約)")
     parser.add_argument("--max_iter", type=int, default=400)
     parser.add_argument("--tol", type=float, default=1e-4)
     # cv_r2_lasso 固有
@@ -190,24 +209,35 @@ def main():
           f"-> {len(tasks)} tasks")
 
     records = []
+    n_failed = 0
     if args.workers <= 1:
         for task in tqdm(tasks, desc="experiments"):
             rec = run_single(task)
             if rec is not None:
                 records.append(rec)
+            else:
+                n_failed += 1
     else:
         with ProcessPoolExecutor(max_workers=args.workers) as ex:
             futures = [ex.submit(run_single, t) for t in tasks]
             for fut in tqdm(as_completed(futures), total=len(tasks),
                             desc="experiments"):
-                rec = fut.result()
+                # ワーカープロセス自体の異常終了でも全体を止めず次へ進む
+                try:
+                    rec = fut.result()
+                except Exception:
+                    traceback.print_exc()
+                    rec = None
                 if rec is not None:
                     records.append(rec)
+                else:
+                    n_failed += 1
 
     df = pd.DataFrame(records)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     df.to_csv(args.out, index=False)
-    print(f"\nsaved {len(df)} rows -> {args.out}")
+    failed_note = f" (失敗 {n_failed}/{len(tasks)} 件はスキップ)" if n_failed else ""
+    print(f"\nsaved {len(df)} rows -> {args.out}{failed_note}")
 
     # 条件ごとの簡易サマリを表示
     if not df.empty:
@@ -215,6 +245,8 @@ def main():
             n=("p_value", "size"),
             mean_p=("p_value", "mean"),
             fpr_005=("p_value", lambda s: float((s < 0.05).mean())),
+            # power 実験で「信号特徴量が選ばれた試行」の割合 (null では常に 0)
+            signal_rate=("is_signal", "mean"),
             mean_time=("time", "mean"),
         )
         print(summary.to_string())
