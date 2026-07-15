@@ -5,7 +5,7 @@
 #
 # 使い方 (プロジェクトルートで実行):
 #   bash src/synthetic/fpr.sh                       # 既定で投入
-#   bash src/synthetic/fpr.sh -m lasso -d iid -N "100 200 300 400" -n 10 -p 1100
+#   bash src/synthetic/fpr.sh -m lasso -d iid -N "100 200 300 400" -n 10 -p 110
 #
 # オプション: -m 手法  -d データ種別 (iid / corr)  -N "サンプル数のリスト"
 #             -n 分割数(サンプル数ごとのジョブ数)  -p 1ジョブのp値数
@@ -18,7 +18,7 @@ METHOD=lasso
 DATA_TYPE=iid
 NSAMPLES="100 200 300 400"   # 横軸となるサンプル数のリスト
 NSPLIT=10                    # サンプル数ごとのジョブ数 (= 分割数)
-PER=1100                     # 1 ジョブが計算する p 値の個数 (エラー時の不足に備え 1 割の余裕)
+PER=110                      # 1 ジョブが計算する p 値の個数 (10 分割 × 110 = 1100、エラー時の不足に備え 1 割の余裕)
 
 while getopts "m:d:N:n:p:w:q:" o; do case $o in
     m) METHOD=$OPTARG;; d) DATA_TYPE=$OPTARG;; N) NSAMPLES=$OPTARG;;

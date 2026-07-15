@@ -6,7 +6,7 @@
 #
 # 使い方 (プロジェクトルートで実行):
 #   bash src/synthetic/power.sh                                  # 既定で投入
-#   bash src/synthetic/power.sh -m lasso -d iid -n 10 -p 1100 -s "0.1 0.2 0.3 0.4"
+#   bash src/synthetic/power.sh -m lasso -d iid -n 10 -p 110 -s "0.1 0.2 0.3 0.4"
 #
 # オプション: -m 手法  -d データ種別 (iid / corr)  -n 分割数(Δごとのジョブ数)
 #             -p 1ジョブのp値数  -s "Δのリスト"  -k 信号特徴量数
@@ -18,7 +18,7 @@ source "$(dirname "$0")/../pbs_common.sh"
 METHOD=lasso
 DATA_TYPE=iid
 NSPLIT=10                    # Δ ごとのジョブ数 (= 分割数)
-PER=1100                     # 1 ジョブが計算する p 値の個数 (エラー時の不足に備え 1 割の余裕)
+PER=110                      # 1 ジョブが計算する p 値の個数 (10 分割 × 110 = 1100、エラー時の不足に備え 1 割の余裕)
 SIGNALS="0.1 0.2 0.3 0.4"    # 横軸となる信号 Δ のリスト
 N_SIGNAL=5
 
