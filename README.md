@@ -62,7 +62,9 @@ uv が extras を外して環境を再同期してしまい pandas 等が消え�
 
 - 特徴量数 p = 20（`--n_features` 既定 20。cv_r2_lasso は p に対して計算時間が
   伸びやすい点に注意）
-- 信号特徴量数 = 2（`--n_signal` 既定 2、β の先頭2要素を Δ）
+- 信号特徴量数 = 1（`--n_signal` 既定 1、β の先頭要素のみ Δ。複数の同格
+  信号があると「1 位 vs 2 位の競争」への条件付けで proposed の検出力が
+  頭打ちになるため、argmax 1 本を検定する本実験では 1 が自然な設定）
 - FPR: n ∈ {100, 200, 300, 400}（`fpr.sh -N`）
 - power: Δ ∈ {0.1, 0.2, 0.3, 0.4}, n = 100 固定（`power.sh -N` で変更可）
 - Lasso の正則化は sklearn と同じ規約 (1/(2n))‖y−Xβ‖² + α‖β‖₁（`--alpha` 既定 0.1）
@@ -147,7 +149,7 @@ bash src/synthetic/power.sh -m cv_r2_lasso        -d iid
 |--------|------|------|
 | `-N` | サンプル数 n (固定値) | 100 |
 | `-s` | Δ のリスト (横軸) | "0.1 0.2 0.3 0.4" |
-| `-k` | 信号を載せる先頭特徴量の数 | 2 |
+| `-k` | 信号を載せる先頭特徴量の数 | 1 |
 | `-p` | 1ジョブが集める有効 p 値の本数 (10 分割 × 110 = 1100 本/条件) | 110 |
 
 ### ローカルで直接実行する場合
@@ -160,7 +162,7 @@ uv run --extra experiments python src/synthetic/run_experiment.py --iter 10 --me
 主なオプション: `--iter` 反復回数 / `--workers` 並列数 /
 `--methods` `--data_types` カンマ区切りの対象 /
 `--n_samples` (既定 100) `--n_features` (既定 20) `--signal` (0=null)
-`--n_signal` (既定 2) / `--seed_start` `--seed_end` `--seed_offset`
+`--n_signal` (既定 1) / `--seed_start` `--seed_end` `--seed_offset`
 ジョブ分割用 seed 範囲 / `--target_pvalues` 動的モード (有効 p 値がこの
 本数に達するまで試行を追加。指定時は `--iter`/`--seed_end` を無視) /
 `--max_trials` 動的モードの試行数上限 (既定: target の 50 倍) /
@@ -174,11 +176,12 @@ uv run --extra experiments python src/synthetic/run_experiment.py --iter 10 --me
 
 ```bash
 # FPR: result/fpr_<method>_<data_type>.pdf
-#      (proposed/oc/naive/bonferroni/data splitting の5本)
+#      (proposed/w/o-pp/naive/bonferroni/data splitting の5本)
 uv run --extra experiments python src/synthetic/plot_fpr.py --csv result/fpr
 
 # power: result/power_<method>_<data_type>.pdf
-#        (proposed と data splitting の2本。各自の信号選択試行のみで算出)
+#        (proposed/w/o-pp/bonferroni/data splitting の4本。naive は invalid の
+#         ため描かない。各自の信号選択試行のみで条件付き power を算出)
 uv run --extra experiments python src/synthetic/plot_power.py --csv result/power
 
 # 使用する p 値の個数を条件ごとに 1000 件に揃える場合

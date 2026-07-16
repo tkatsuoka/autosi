@@ -287,7 +287,7 @@ def main():
                         help="特徴量数 p")
     parser.add_argument("--signal", type=float, default=0.0,
                         help="真の係数の傾き Δ (0=null/FPR, >0=power)")
-    parser.add_argument("--n_signal", type=int, default=2,
+    parser.add_argument("--n_signal", type=int, default=1,
                         help="信号を載せる先頭特徴量の数")
     parser.add_argument("--out", type=str, default="result/experiment_results.csv")
     # lasso / cv 共通ハイパラ

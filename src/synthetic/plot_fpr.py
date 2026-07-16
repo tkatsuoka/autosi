@@ -26,7 +26,7 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
     # サンプル数ごとに type I error rate = P(p 値 < α) を集計
     p_cols = {
         "p_value": "proposed",
-        "oc_p_value": "o/w-pp",
+        "oc_p_value": "w/o-pp",
         "naive_p_value": "naive",
         "bonferroni_p_value": "bonferroni",
         "ds_p_value": "data splitting",
