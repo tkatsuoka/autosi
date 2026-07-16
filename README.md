@@ -62,9 +62,9 @@ uv が extras を外して環境を再同期してしまい pandas 等が消え�
 
 - 特徴量数 p = 15（`--n_features` 既定 15。p=20 は cv_r2_lasso の計算時間が
   かかりすぎるため引き下げた）
-- 信号特徴量数 = 5（`--n_signal` 既定 5、β の先頭5要素を Δ）
+- 信号特徴量数 = 3（`--n_signal` 既定 3、β の先頭3要素を Δ）
 - FPR: n ∈ {100, 200, 300, 400}（`fpr.sh -N`）
-- power: Δ ∈ {0.1, 0.2, 0.3, 0.4}, n = 200 固定（`--n_samples` 既定 200）
+- power: Δ ∈ {0.1, 0.2, 0.3, 0.4}, n = 100 固定（`power.sh -N` で変更可）
 - Lasso の正則化は sklearn と同じ規約 (1/(2n))‖y−Xβ‖² + α‖β‖₁（`--alpha` 既定 0.1）
 - cv_r2_lasso は K=3 fold、λ グリッドは logspace(-2, 0, 5) = [0.01, 1] の5点
   （λ < 1e-2 はほぼ無正則化で SI の計算コストだけ増えるため除外）
@@ -124,7 +124,7 @@ bash src/synthetic/fpr.sh -m cv_r2_lasso        -d iid
 ### power (検出力)
 
 信号 Δ を振り、`y = Xβ + ε`（先頭 `-k` 個の係数を Δ）で p 値を計算する。
-n は `run_experiment.py` の既定 (200) に固定される。
+n は既定 100 に固定される（`-N` で変更可）。
 
 ```bash
 bash src/synthetic/power.sh -m lasso              -d iid
@@ -132,12 +132,13 @@ bash src/synthetic/power.sh -m marginal_screening -d iid
 bash src/synthetic/power.sh -m cv_r2_lasso        -d iid
 ```
 
-オプション (FPR と共通の `-m -d -n -p -w -q -j` に加えて):
+オプション (FPR と共通の `-m -d -n -p -w -q` に加えて):
 
 | フラグ | 意味 | 既定 |
 |--------|------|------|
+| `-N` | サンプル数 n (固定値) | 100 |
 | `-s` | Δ のリスト (横軸) | "0.1 0.2 0.3 0.4" |
-| `-k` | 信号を載せる先頭特徴量の数 | 5 |
+| `-k` | 信号を載せる先頭特徴量の数 | 3 |
 
 ### ローカルで直接実行する場合
 
@@ -149,7 +150,7 @@ uv run --extra experiments python src/synthetic/run_experiment.py --iter 10 --me
 主なオプション: `--iter` 反復回数 / `--workers` 並列数 /
 `--methods` `--data_types` カンマ区切りの対象 /
 `--n_samples` (既定 200) `--n_features` (既定 15) `--signal` (0=null)
-`--n_signal` (既定 5) / `--seed_start` `--seed_end` `--seed_offset`
+`--n_signal` (既定 3) / `--seed_start` `--seed_end` `--seed_offset`
 ジョブ分割用 seed 範囲 / `--alpha` `--max_iter` `--tol` Lasso ハイパラ /
 `--K` `--n_lambda` `--lam_lo` `--lam_hi` CV ハイパラ / `--out` 出力先。
 

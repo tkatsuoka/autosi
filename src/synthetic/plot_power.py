@@ -1,8 +1,10 @@
 """検出力 (power) 実験の結果を (手法 × データ種別) ごとに折れ線グラフ化する。
 
 横軸: 信号の傾き Δ、縦軸: power (= p 値 < α の割合)。
-(手法, データ種別) の組ごとに完全に別ファイル
-(result/power_<method>_<data_type>.pdf) を 1 本の折れ線で出力する。
+(手法, データ種別) の組ごとに別ファイル (result/power_<method>_<data_type>.pdf)
+を出力し、proposed / o/w-pp / naive / bonferroni / data splitting の
+各 p 値の power 曲線を重ねて描く (色は FPR プロットと対応。
+naive は FPR を制御しないため参考値)。
 
 使い方 (CSV 単体でもフォルダでも可。フォルダは再帰的に全 CSV を読む):
   python src/synthetic/plot_power.py --csv result/power/lasso_iid_d0.1
@@ -48,14 +50,22 @@ def _power_curve(sub, p_col, flag_col, alpha, n_pvalues, label, method, data_typ
 
 def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
     """(手法, データ種別) 1 組の power 折れ線グラフ (横軸 Δ) を描く。"""
-    # (凡例ラベル, p 値列, 信号選択フラグ列)。データ分割法は前半のみで
-    # 選択するため、条件付けに使うフラグ列も別 (ds_is_signal)。
-    curves = [("proposed", "p_value", "is_signal")]
-    if "ds_p_value" in sub.columns:
-        curves.append(("data splitting", "ds_p_value", "ds_is_signal"))
+    # (凡例ラベル, p 値列, 信号選択フラグ列)。並び・色は plot_fpr と揃える。
+    # データ分割法は前半のみで選択するため、条件付けに使うフラグ列も別
+    # (ds_is_signal)。naive は FPR を制御しないため power は参考値。
+    curves = [
+        ("proposed", "p_value", "is_signal"),
+        ("o/w-pp", "oc_p_value", "is_signal"),
+        ("naive", "naive_p_value", "is_signal"),
+        ("bonferroni", "bonferroni_p_value", "is_signal"),
+        ("data splitting", "ds_p_value", "ds_is_signal"),
+    ]
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(7, 5))
     for i, (label, p_col, flag_col) in enumerate(curves):
+        # 旧形式 CSV に列が無い場合は飛ばす (色番号は固定のまま)
+        if p_col not in sub.columns:
+            continue
         power = _power_curve(sub, p_col, flag_col, alpha, n_pvalues,
                              label, method, data_type)
         ax.plot(power.index, power.values, marker="o", color=f"C{i}",
