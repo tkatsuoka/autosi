@@ -60,9 +60,9 @@ uv が extras を外して環境を再同期してしまい pandas 等が消え�
 
 ## 実験設定 (既定値)
 
-- 特徴量数 p = 15（`--n_features` 既定 15。p=20 は cv_r2_lasso の計算時間が
-  かかりすぎるため引き下げた）
-- 信号特徴量数 = 3（`--n_signal` 既定 3、β の先頭3要素を Δ）
+- 特徴量数 p = 20（`--n_features` 既定 20。cv_r2_lasso は p に対して計算時間が
+  伸びやすい点に注意）
+- 信号特徴量数 = 2（`--n_signal` 既定 2、β の先頭2要素を Δ）
 - FPR: n ∈ {100, 200, 300, 400}（`fpr.sh -N`）
 - power: Δ ∈ {0.1, 0.2, 0.3, 0.4}, n = 100 固定（`power.sh -N` で変更可）
 - Lasso の正則化は sklearn と同じ規約 (1/(2n))‖y−Xβ‖² + α‖β‖₁（`--alpha` 既定 0.1）
@@ -126,19 +126,29 @@ bash src/synthetic/fpr.sh -m cv_r2_lasso        -d iid
 信号 Δ を振り、`y = Xβ + ε`（先頭 `-k` 個の係数を Δ）で p 値を計算する。
 n は既定 100 に固定される（`-N` で変更可）。
 
+条件付き power は「選択に成功した試行」しか集計に使えないため、p 値の
+本数は**動的モード**で確保する: 各ジョブは有効 p 値（proposed 系 =
+is_signal、DS = ds_is_signal の両基準）が `-p` 本たまるまで試行を自動追加
+する。null 特徴量が選ばれた試行では高コストな SI 推論を省略するので、
+選択成功率が低い小さな Δ でも計算コストは大きく増えない。
+ジョブ間の seed 重複は part ごとに 10000 刻みのブロックを割り当てて回避
+（1 ジョブの試行数上限は既定で `-p` の 50 倍）。
+
 ```bash
 bash src/synthetic/power.sh -m lasso              -d iid
 bash src/synthetic/power.sh -m marginal_screening -d iid
 bash src/synthetic/power.sh -m cv_r2_lasso        -d iid
 ```
 
-オプション (FPR と共通の `-m -d -n -p -w -q` に加えて):
+オプション (FPR と共通の `-m -d -n -w -q` に加えて。`-p` は FPR と異なり
+「有効 p 値の本数」を意味する):
 
 | フラグ | 意味 | 既定 |
 |--------|------|------|
 | `-N` | サンプル数 n (固定値) | 100 |
 | `-s` | Δ のリスト (横軸) | "0.1 0.2 0.3 0.4" |
-| `-k` | 信号を載せる先頭特徴量の数 | 3 |
+| `-k` | 信号を載せる先頭特徴量の数 | 2 |
+| `-p` | 1ジョブが集める有効 p 値の本数 (10 分割 × 110 = 1100 本/条件) | 110 |
 
 ### ローカルで直接実行する場合
 
@@ -149,9 +159,12 @@ uv run --extra experiments python src/synthetic/run_experiment.py --iter 10 --me
 
 主なオプション: `--iter` 反復回数 / `--workers` 並列数 /
 `--methods` `--data_types` カンマ区切りの対象 /
-`--n_samples` (既定 200) `--n_features` (既定 15) `--signal` (0=null)
-`--n_signal` (既定 3) / `--seed_start` `--seed_end` `--seed_offset`
-ジョブ分割用 seed 範囲 / `--alpha` `--max_iter` `--tol` Lasso ハイパラ /
+`--n_samples` (既定 100) `--n_features` (既定 20) `--signal` (0=null)
+`--n_signal` (既定 2) / `--seed_start` `--seed_end` `--seed_offset`
+ジョブ分割用 seed 範囲 / `--target_pvalues` 動的モード (有効 p 値がこの
+本数に達するまで試行を追加。指定時は `--iter`/`--seed_end` を無視) /
+`--max_trials` 動的モードの試行数上限 (既定: target の 50 倍) /
+`--alpha` `--max_iter` `--tol` Lasso ハイパラ /
 `--K` `--n_lambda` `--lam_lo` `--lam_hi` CV ハイパラ / `--out` 出力先。
 
 ### 可視化 (全ジョブ完了後)
@@ -251,10 +264,10 @@ seed 順の先頭から揃えられる (既定は全件)。
 | method | 手法名 |
 | data_type | iid / corr |
 | seed | 乱数シード (= 試行ID) |
-| p_value | 選択的 p 値 |
-| oc_p_value | over-conditioning の p 値 (比較用) |
-| naive_p_value | 選択を無視した naive p 値 (比較用) |
-| bonferroni_p_value | Bonferroni 補正 p 値 (比較数 = 2^p) |
+| p_value | 選択的 p 値 (power 実験で is_signal=False の試行は SI 推論を省略するため空欄) |
+| oc_p_value | over-conditioning の p 値 (比較用、空欄条件は p_value と同じ) |
+| naive_p_value | 選択を無視した naive p 値 (比較用、空欄条件は p_value と同じ) |
+| bonferroni_p_value | Bonferroni 補正 p 値 (比較数 = 2^p、空欄条件は p_value と同じ) |
 | time | p 値の計算時間 [秒] |
 | n_samples | サンプル数 |
 | n_features | 特徴量数 |

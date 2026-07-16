@@ -28,7 +28,7 @@ def generate_data(
     n_features: int,
     seed: int,
     signal: float = 0.0,
-    n_signal: int = 3,
+    n_signal: int = 2,
     rho: float = 0.5,
 ):
     """実験用の (X, y, Sigma) を生成する。
@@ -40,7 +40,7 @@ def generate_data(
     n_features : 特徴量数
     seed : 乱数シード
     signal : 真の係数の大きさ Δ (0 なら null 仮説)
-    n_signal : 信号を載せる先頭特徴量の数 (既定 3、run_experiment の既定と揃える)
+    n_signal : 信号を載せる先頭特徴量の数 (既定 2、run_experiment の既定と揃える)
     rho : corr 時の AR(1) 相関係数
 
     Returns
