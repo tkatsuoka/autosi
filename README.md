@@ -254,7 +254,8 @@ uv run --extra experiments python src/realdata/run_realdata.py --iter 10 --metho
 `plot_realdata.py` は α=0.05 (変更は `--alpha`) の棄却率を
 `realdata_summary.csv` (縦持ち) と、手法ごとの
 `realdata_table_<method>.csv` (行 = n, 列 = データセット,
-セル = proposed/oc/ds の論文 Table 1 形式) に出力する。
+セル = proposed/w/o-pp/bonferroni/ds の論文 Table 1 形式。naive は
+invalid のため表に出さないが realdata_summary.csv には含む) に出力する。
 `--n_pvalues` で各条件 (手法, n, データセット) が使用する p 値の個数を
 seed 順の先頭から揃えられる (既定は全件)。
 

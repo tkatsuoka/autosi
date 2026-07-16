@@ -288,6 +288,7 @@ def main():
             n=("p_value", "size"),
             reject_proposed=("p_value", lambda s: float((s < 0.05).mean())),
             reject_oc=("oc_p_value", lambda s: float((s < 0.05).mean())),
+            reject_bonf=("bonferroni_p_value", lambda s: float((s < 0.05).mean())),
             reject_ds=("ds_p_value", lambda s: float((s < 0.05).mean())),
             mean_time=("time", "mean"),
         )

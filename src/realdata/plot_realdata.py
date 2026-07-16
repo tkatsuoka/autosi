@@ -1,7 +1,9 @@
 """実データ実験の結果を論文 Table 1 形式の表に集計する。
 
 各 (手法, サンプル数 n, データセット) の棄却率 P(p 値 < α) を
-「proposed / oc」の形で並べた表を出力する (実データでの power 指標)。
+「proposed / w/o-pp / bonferroni / ds」の形で並べた表を出力する
+(実データでの power 指標。naive は invalid のため表には出さないが、
+realdata_summary.csv には全 p 値列の棄却率が入る)。
 
 使い方 (CSV 単体でもフォルダでも可。フォルダは再帰的に全 CSV を読む):
   python src/realdata/plot_realdata.py --csv result/realdata
@@ -35,8 +37,9 @@ def summarize(df, alpha):
 
 
 def table_legend(summary):
-    """論文形式の表のセル凡例 (proposed/oc または proposed/oc/ds) を返す。"""
-    return "proposed/oc/ds" if "ds" in summary.columns else "proposed/oc"
+    """論文形式の表のセル凡例を返す (ds 列は旧形式 CSV に無いことがある)。"""
+    legend = "proposed/w/o-pp/bonferroni"
+    return legend + ("/ds" if "ds" in summary.columns else "")
 
 
 def to_paper_table(sub):
@@ -44,7 +47,7 @@ def to_paper_table(sub):
     has_ds = "ds" in sub.columns
 
     def fmt(r):
-        cell = f"{r.proposed:.2f}/{r.oc:.2f}"
+        cell = f"{r.proposed:.2f}/{r.oc:.2f}/{r.bonferroni:.2f}"
         return cell + (f"/{r.ds:.2f}" if has_ds else "")
 
     cell = sub.assign(cell=sub.apply(fmt, axis=1))
