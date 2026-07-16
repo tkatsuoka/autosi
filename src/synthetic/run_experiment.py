@@ -194,7 +194,7 @@ def main():
                         help="全 seed に加える定数。手法ごとに変えると "
                              "手法間で異なるデータになり独立性が保てる")
     parser.add_argument("--n_samples", type=int, default=200)
-    parser.add_argument("--n_features", type=int, default=20,
+    parser.add_argument("--n_features", type=int, default=15,
                         help="特徴量数 p")
     parser.add_argument("--signal", type=float, default=0.0,
                         help="真の係数の傾き Δ (0=null/FPR, >0=power)")
@@ -205,12 +205,14 @@ def main():
     parser.add_argument("--alpha", type=float, default=0.1,
                         help="Lasso 正則化係数 (sklearn と同じ "
                              "(1/(2n))RSS + alpha*|beta|_1 規約)")
-    parser.add_argument("--max_iter", type=int, default=400)
+    parser.add_argument("--max_iter", type=int, default=1000)
     parser.add_argument("--tol", type=float, default=1e-4)
     # cv_r2_lasso 固有
     parser.add_argument("--K", type=int, default=3)
-    parser.add_argument("--n_lambda", type=int, default=10)
-    parser.add_argument("--lam_lo", type=float, default=-4.0)
+    # λ グリッドは logspace(lam_lo, lam_hi, n_lambda)。λ < 1e-2 はほぼ
+    # 無正則化で計算コストだけ食うため [1e-2, 1] の 5 点に絞る。
+    parser.add_argument("--n_lambda", type=int, default=5)
+    parser.add_argument("--lam_lo", type=float, default=-2.0)
     parser.add_argument("--lam_hi", type=float, default=0.0)
     args = parser.parse_args()
 

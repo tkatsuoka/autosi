@@ -25,6 +25,7 @@ src/
 ├── synthetic/               合成データ実験
 │   ├── data.py              データ生成 (iid / corr, null / power)
 │   ├── run_experiment.py    1ジョブ分の計算本体 (p値と計算時間を CSV 出力)
+│   ├── submit_all.sh        一括投入 (3手法 × iid/corr × fpr/power)
 │   ├── fpr.sh               FPR実験ドライバ (サンプル数 n を振る)
 │   ├── power.sh             power実験ドライバ (信号Δ を振る)
 │   ├── plot_fpr.py          FPR の折れ線グラフ (横軸=サンプル数)
@@ -59,11 +60,14 @@ uv が extras を外して環境を再同期してしまい pandas 等が消え�
 
 ## 実験設定 (既定値)
 
-- 特徴量数 p = 20（`--n_features` 既定 20）
+- 特徴量数 p = 15（`--n_features` 既定 15。p=20 は cv_r2_lasso の計算時間が
+  かかりすぎるため引き下げた）
 - 信号特徴量数 = 5（`--n_signal` 既定 5、β の先頭5要素を Δ）
 - FPR: n ∈ {100, 200, 300, 400}（`fpr.sh -N`）
 - power: Δ ∈ {0.1, 0.2, 0.3, 0.4}, n = 200 固定（`--n_samples` 既定 200）
 - Lasso の正則化は sklearn と同じ規約 (1/(2n))‖y−Xβ‖² + α‖β‖₁（`--alpha` 既定 0.1）
+- cv_r2_lasso は K=3 fold、λ グリッドは logspace(-2, 0, 5) = [0.01, 1] の5点
+  （λ < 1e-2 はほぼ無正則化で SI の計算コストだけ増えるため除外）
 - Bonferroni 補正の比較数は選択パターン総数 2^p
 - power は「選ばれた特徴量が真に信号を持つ試行」のみで算出する条件付き検出力
   (`is_signal` 列で判定。null 特徴量の棄却は type I error なので分母からも除外)
@@ -84,6 +88,17 @@ spool 実行されるため、`PBS_O_WORKDIR` 起点で `.venv/bin/python3` を
 直接呼び、`MYARGS` を Python スクリプトへそのまま渡す。
 
 ## 合成データ実験
+
+### 一括投入 (3手法 × iid/corr をまとめて)
+
+```bash
+bash src/synthetic/submit_all.sh          # fpr + power 両方 (480 ジョブ)
+bash src/synthetic/submit_all.sh fpr      # FPR のみ (240 ジョブ)
+bash src/synthetic/submit_all.sh power    # power のみ (240 ジョブ)
+```
+
+内部で fpr.sh / power.sh を全組み合わせで呼ぶだけなので、
+細かい条件指定をしたい場合は以下の個別ドライバを使う。
 
 ### FPR (type I error rate)
 
@@ -133,7 +148,7 @@ uv run --extra experiments python src/synthetic/run_experiment.py --iter 10 --me
 
 主なオプション: `--iter` 反復回数 / `--workers` 並列数 /
 `--methods` `--data_types` カンマ区切りの対象 /
-`--n_samples` (既定 200) `--n_features` (既定 20) `--signal` (0=null)
+`--n_samples` (既定 200) `--n_features` (既定 15) `--signal` (0=null)
 `--n_signal` (既定 5) / `--seed_start` `--seed_end` `--seed_offset`
 ジョブ分割用 seed 範囲 / `--alpha` `--max_iter` `--tol` Lasso ハイパラ /
 `--K` `--n_lambda` `--lam_lo` `--lam_hi` CV ハイパラ / `--out` 出力先。
