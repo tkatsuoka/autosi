@@ -320,15 +320,16 @@ def main():
     parser.add_argument("--tol", type=float, default=1e-4)
     # cv_r2_lasso 固有
     parser.add_argument("--K", type=int, default=3)
-    # λ グリッドは logspace(lam_lo, lam_hi, n_lambda) = {0.01, 0.03, 0.1, 0.3}。
-    # 標準化データでは λ_max = max|x_j^T y|/n ≈ 0.3〜0.4 より大きい λ は
-    # 空モデルにしかならないため、sklearn (LassoCV) や glmnet と同様に
-    # λ_max 近辺までを上限とする。λ < 1e-2 はほぼ無正則化でコストだけ食う。
-    # SI では λ 1 点あたりの計算が重いため点数は 4 点に絞る (固定グリッド
-    # なのは、データ依存グリッドだと選択イベントの追跡が複雑になるため)。
-    parser.add_argument("--n_lambda", type=int, default=4)
+    # λ グリッドは logspace(lam_lo, lam_hi, n_lambda)
+    # = {0.01, 0.018, 0.032, 0.056, 0.1}。上限を λ_max (= max|x_j^T y|/n
+    # ≈ 0.3〜0.4) 付近まで広げると、CV がその腕を選んだ試行で係数がほぼ
+    # 潰れて特徴選択が縮退し、信号特徴の選択確度が大きく落ちる (ローカル
+    # 実測: Δ=0.3 で 0.50 -> 0.75 に改善) ため、予測に有効な [0.01, 0.1]
+    # に絞る。λ < 1e-2 はほぼ無正則化でコストだけ食う (固定グリッドなのは、
+    # データ依存グリッドだと選択イベントの追跡が複雑になるため)。
+    parser.add_argument("--n_lambda", type=int, default=5)
     parser.add_argument("--lam_lo", type=float, default=-2.0)
-    parser.add_argument("--lam_hi", type=float, default=-0.5)
+    parser.add_argument("--lam_hi", type=float, default=-1.0)
     args = parser.parse_args()
 
     cfg = {
