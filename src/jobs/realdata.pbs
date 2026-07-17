@@ -3,8 +3,10 @@
 # 引数は環境変数 MYARGS で受け取る (qsub -v MYARGS="..." で投入)。
 # spool 実行されるため、リポジトリ内のパスは PBS_O_WORKDIR 起点で解決する。
 # データセットはドライバがログインノードで取得済み (計算ノードはキャッシュ参照のみ)。
+# 以下の #PBS はこのファイルを直接 qsub した場合のフォールバック。
+# ドライバ経由 (pbs_common.sh の submit_job) ではコマンドライン指定が優先される。
 #PBS -q cpu-large
-#PBS -l select=1:ncpus=96:mem=96gb
+#PBS -l select=1:ncpus=96:mem=512gb
 #PBS -l walltime=72:00:00
 
 set -euo pipefail

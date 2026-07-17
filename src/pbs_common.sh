@@ -18,8 +18,12 @@ EO_DIR="${PROJECT_DIR}/eo"          # PBS 標準出力/エラーの出力先
 mkdir -p "$EO_DIR"                  # 無ければ作成（投入前に用意しておく）
 
 # --- PBS 投入設定 --------------------------------------------
-QUEUE="cpu-large"                   # キューは全実験で cpu-large に統一（jobs/*.pbs にも記載）
-WORKERS=96                          # --workers（jobs/*.pbs の ncpus と揃える）
+#  リソース要求はここで一元管理し、submit_job が qsub コマンドラインで渡す
+#  （コマンドライン指定は jobs/*.pbs 内の #PBS ディレクティブより優先される）
+QUEUE="cpu-large"                   # 既定キュー。ドライバの -q で cpu-huge に切替可能
+WORKERS=96                          # --workers（select の ncpus にもこの値を使う）
+MEM_PER_NODE="512gb"                # 1 ノードあたりのメモリ要求（キューによらず共通）
+WALLTIME="72:00:00"                 # 実行時間上限（キューによらず共通）
 
 # --- ワーカースクリプト（qsub で投入する実体） ---------------
 SYNTHETIC_JOB="${SRC_DIR}/jobs/synthetic.pbs"   # src/synthetic/run_experiment.py 用
@@ -33,6 +37,9 @@ submit_job() {
     local job_name="$1"
     local job_script="$2"
     local myargs="$3"
-    qsub -N "$job_name" -q "$QUEUE" -o "$EO_DIR" -e "$EO_DIR" \
+    qsub -N "$job_name" -q "$QUEUE" \
+         -l "select=1:ncpus=${WORKERS}:mem=${MEM_PER_NODE}" \
+         -l "walltime=${WALLTIME}" \
+         -o "$EO_DIR" -e "$EO_DIR" \
          -v MYARGS="$myargs" "$job_script"
 }
