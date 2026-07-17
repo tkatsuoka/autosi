@@ -31,8 +31,12 @@ def _power_curve(sub, p_col, flag_col, alpha, n_pvalues, label, method, data_typ
     if flag_col in sub.columns:
         n_total = len(sub)
         sub = sub[sub[flag_col]]
-        print(f"{method} ({data_type}) [{label}]: 信号特徴量が選ばれた試行 "
-              f"{len(sub)}/{n_total} のみで power を算出")
+        # 動的モードで目標本数の充足後に SI 推論を省略した行は p 値が
+        # 空なので除く (DS 収集専用フェーズの行。除外はシード順の打ち切り
+        # と同じで、p 値の値には依存しないためバイアスは生じない)
+        sub = sub[sub[p_col].notna()]
+        print(f"{method} ({data_type}) [{label}]: 有効 p 値 "
+              f"{len(sub)}/{n_total} 件で power を算出")
     else:
         print(f"警告: {method} ({data_type}) に {flag_col} 列が無い (旧形式CSV)。"
               "全試行で power を算出します。run_experiment.py で再計算してください。")

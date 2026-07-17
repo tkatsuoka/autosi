@@ -147,7 +147,9 @@ def run_single(task):
         # 集計対象外なので、高コストな SI 推論 (パラメトリック探索) を省略する。
         # naive / bonferroni / oc も同じフィルタ (is_signal) でしか集計しない
         # ため一緒に省略してよい (CSV では空欄になる)。
-        if cfg["signal"] != 0.0 and not is_signal:
+        # skip_si は動的モードで proposed 側の目標本数が満ちた後のフラグ
+        # (残る必要があるのは DS の本数だけなので SI 推論を全スキップする)。
+        if cfg["signal"] != 0.0 and (not is_signal or cfg.get("skip_si", False)):
             p_value = oc_p = naive_p = bonferroni_p = elapsed = None
         else:
             oc_p = float(si.inference(eta=eta, prob_vec=y, var=Sigma, algorithm=algorithm, inference_mode="over_conditioning").p_value)
@@ -201,6 +203,9 @@ def run_dynamic(method, data_type, cfg, target, seed_start, seed_offset,
     数え、両方が target に達するまで続ける (null 実験では全試行が有効)。
     多数ワーカーの並列でも遊ばないよう、必要試行数を選択成功率の実測値
     から見積もった「波」単位で投入し、不足していれば次の波を出す。
+    DS は半分のデータでしか選択できず成功率が低い (= ボトルネック) ため、
+    proposed 側が先に満ちるのが普通。その後の波は skip_si を立てて
+    選択 + DS の z 検定だけを計算し、高コストな SI 推論を省略する。
     seed は seed_start から連番で消費する (ジョブ分割時は seed_start を
     ブロック単位でずらして重複を避ける)。
     """
@@ -212,28 +217,43 @@ def run_dynamic(method, data_type, cfg, target, seed_start, seed_offset,
     next_seed = seed_start + seed_offset
     is_null = cfg["signal"] == 0.0
 
+    cfg_skip = dict(cfg, skip_si=True)  # DS 収集専用 (SI 推論を省略) のタスク用
+
     with ProcessPoolExecutor(max_workers=workers) as ex:
         wave = 0
         while True:
-            # 残り必要本数を選択成功率 (楽観寄りの平滑化) で割って波の大きさを決める
+            # 残り必要本数を選択成功率 (楽観寄りの平滑化) で割って波の大きさを決める。
+            # proposed と DS で必要な試行数を別々に見積もり、proposed 分を
+            # 超える試行 (DS のボトルネック解消のためだけの試行) は skip_si を
+            # 立てて SI 推論を省略する — proposed の p 値を無駄に作らない。
             n_done = len(records) + n_failed
             if is_null:
-                need = target - len(records)
+                need_full = need_total = target - len(records)
             else:
                 r_prop = (n_prop + 1) / (n_done + 1)
                 r_ds = (n_ds + 1) / (n_done + 1)
-                need = max((target - n_prop) / r_prop, (target - n_ds) / r_ds)
-            if need <= 0:
+                need_full = (target - n_prop) / r_prop   # SI 込みで必要な試行数
+                need_total = max(need_full, (target - n_ds) / r_ds)
+            if need_total <= 0:
                 break
-            n_wave = min(int(need * 1.1) + 1, max_trials - n_launched)
+            n_wave = min(int(need_total * 1.1) + 1, max_trials - n_launched)
             if n_wave <= 0:
                 print(f"警告: 最大試行数 {max_trials} に到達。有効 p 値が不足 "
                       f"(proposed={n_prop}, ds={n_ds} / 目標 {target})",
                       file=sys.stderr)
                 break
             wave += 1
-            tasks = [(method, data_type, s, cfg)
-                     for s in range(next_seed, next_seed + n_wave)]
+            # 波の前半 n_full 試行だけ SI 込み、残りは DS 専用
+            if need_full > 0:
+                n_full = min(n_wave, int(need_full * 1.1) + 1)
+            else:
+                n_full = 0
+            if n_wave > n_full:
+                print(f"{method}/{data_type} wave{wave}: SI 込み {n_full} + "
+                      f"DS のみ {n_wave - n_full} 試行 "
+                      f"(有効 p 値 proposed={n_prop}, ds={n_ds} / 目標 {target})")
+            tasks = [(method, data_type, s, cfg if j < n_full else cfg_skip)
+                     for j, s in enumerate(range(next_seed, next_seed + n_wave))]
             next_seed += n_wave
             n_launched += n_wave
             futures = [ex.submit(run_single, t) for t in tasks]
@@ -248,7 +268,9 @@ def run_dynamic(method, data_type, cfg, target, seed_start, seed_offset,
                     n_failed += 1
                     continue
                 records.append(rec)
-                n_prop += int(rec["is_signal"])
+                # proposed 側は「実際に p 値を計算できた本数」を数える
+                # (skip_si の波では is_signal=True でも p 値は増えない)
+                n_prop += int(rec["p_value"] is not None)
                 n_ds += int(rec["ds_is_signal"])
 
     print(f"{method}/{data_type}: 試行 {n_launched} 回で有効 p 値 "
@@ -298,11 +320,15 @@ def main():
     parser.add_argument("--tol", type=float, default=1e-4)
     # cv_r2_lasso 固有
     parser.add_argument("--K", type=int, default=3)
-    # λ グリッドは logspace(lam_lo, lam_hi, n_lambda)。λ < 1e-2 はほぼ
-    # 無正則化で計算コストだけ食うため [1e-2, 1] の 5 点に絞る。
-    parser.add_argument("--n_lambda", type=int, default=5)
+    # λ グリッドは logspace(lam_lo, lam_hi, n_lambda) = {0.01, 0.03, 0.1, 0.3}。
+    # 標準化データでは λ_max = max|x_j^T y|/n ≈ 0.3〜0.4 より大きい λ は
+    # 空モデルにしかならないため、sklearn (LassoCV) や glmnet と同様に
+    # λ_max 近辺までを上限とする。λ < 1e-2 はほぼ無正則化でコストだけ食う。
+    # SI では λ 1 点あたりの計算が重いため点数は 4 点に絞る (固定グリッド
+    # なのは、データ依存グリッドだと選択イベントの追跡が複雑になるため)。
+    parser.add_argument("--n_lambda", type=int, default=4)
     parser.add_argument("--lam_lo", type=float, default=-2.0)
-    parser.add_argument("--lam_hi", type=float, default=0.0)
+    parser.add_argument("--lam_hi", type=float, default=-0.5)
     args = parser.parse_args()
 
     cfg = {

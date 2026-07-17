@@ -216,11 +216,13 @@ def main():
     parser.add_argument("--max_iter", type=int, default=1000)
     parser.add_argument("--tol", type=float, default=1e-4)
     parser.add_argument("--K", type=int, default=3)
-    # λ グリッドは logspace(lam_lo, lam_hi, n_lambda)。λ < 1e-2 はほぼ
-    # 無正則化で計算コストだけ食うため [1e-2, 1] の 5 点に絞る。
-    parser.add_argument("--n_lambda", type=int, default=5)
+    # λ グリッドは logspace(lam_lo, lam_hi, n_lambda) = {0.01, 0.03, 0.1, 0.3}。
+    # 標準化データでは λ_max = max|x_j^T y|/n ≈ 0.3〜0.4 より大きい λ は
+    # 空モデルにしかならないため、sklearn (LassoCV) や glmnet と同様に
+    # λ_max 近辺までを上限とする (synthetic 側と同じ既定)。
+    parser.add_argument("--n_lambda", type=int, default=4)
     parser.add_argument("--lam_lo", type=float, default=-2.0)
-    parser.add_argument("--lam_hi", type=float, default=0.0)
+    parser.add_argument("--lam_hi", type=float, default=-0.5)
     args = parser.parse_args()
 
     cfg = {
