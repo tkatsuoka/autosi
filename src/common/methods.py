@@ -15,10 +15,17 @@ import autosi as si
 
 
 def marginal_screening(y, X):
-    """相関 (X^T y) が最大の変数を 1 つ選び、その eta を返す。"""
+    """相関 (X^T y) が最大の変数を 1 つ選び、その eta を返す。
+
+    選択は argmax で追跡する。argsort は「全要素の順序が保たれる」制約
+    (隣接比較 p-1 本) を課すのに対し、argmax は「1 位が 1 位のまま」
+    (1位 vs 他 p-1 本) だけで済むため、パラメトリック探索の区間が粗く
+    なり計算が軽く、w/o-pp (over-conditioning) の条件付けも緩くなる。
+    スコア X^T y は連続分布でタイが起きないため選択結果自体は同一。
+    """
     corr = X.T @ y
     eta = (X.T @ X).inv() @ X.T
-    idx = si.argsort(si.abs(corr))[-1]
+    idx = si.argmax(si.abs(corr))
     return eta[idx]
 
 

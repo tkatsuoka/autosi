@@ -53,7 +53,7 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
     ax.axhline(alpha, color="gray", ls="--", lw=1, label=f"alpha={alpha}")
     ax.set_xlabel("number of samples n")
     ax.set_ylabel("type I error rate")
-    ax.set_title(f"{method} ({data_type})")
+    # ax.set_title(f"{method} ({data_type})")
     ax.set_ylim(0, 1.0)
     ax.grid(alpha=0.3)
     ax.legend()
