@@ -178,6 +178,11 @@ def run_single(task):
             "n_features": cfg["n_features"],
             "signal": cfg["signal"],
             "n_signal": cfg["n_signal"],
+            # どの設定で走った結果かを CSV 単体で検証できるように記録する
+            "K": cfg["K"],
+            "n_lambda": cfg["n_lambda"],
+            "lam_lo": cfg["lam_lo"],
+            "lam_hi": cfg["lam_hi"],
             # power を「実際に信号が載った特徴量が選ばれた試行」のみで測るための情報
             "selected_index": selected_index,
             "is_signal": is_signal,
@@ -320,14 +325,17 @@ def main():
     parser.add_argument("--tol", type=float, default=1e-4)
     # cv_r2_lasso 固有
     parser.add_argument("--K", type=int, default=3)
-    # λ グリッドは logspace(lam_lo, lam_hi, n_lambda)
-    # = {0.01, 0.018, 0.032, 0.056, 0.1}。上限を λ_max (= max|x_j^T y|/n
-    # ≈ 0.3〜0.4) 付近まで広げると、CV がその腕を選んだ試行で係数がほぼ
-    # 潰れて特徴選択が縮退し、信号特徴の選択確度が大きく落ちる (ローカル
-    # 実測: Δ=0.3 で 0.50 -> 0.75 に改善) ため、予測に有効な [0.01, 0.1]
-    # に絞る。λ < 1e-2 はほぼ無正則化でコストだけ食う (固定グリッドなのは、
-    # データ依存グリッドだと選択イベントの追跡が複雑になるため)。
-    parser.add_argument("--n_lambda", type=int, default=5)
+    # λ グリッドは logspace(lam_lo, lam_hi, n_lambda) = {0.01, 0.032, 0.1}。
+    # 上限を λ_max (= max|x_j^T y|/n ≈ 0.3〜0.4) 付近まで広げると、CV が
+    # その腕を選んだ試行で係数がほぼ潰れて特徴選択が縮退し、信号特徴の
+    # 選択確度が大きく落ちる (ローカル実測: Δ=0.3 で 0.50 -> 0.75 に改善)
+    # ため、予測に有効な [0.01, 0.1] に絞る。λ < 1e-2 はほぼ無正則化で
+    # コストだけ食う。点数は 3 点: 腕の数は λ 切り替え境界の数に直結し、
+    # 多いほど選択イベントが断片化して SI の検出力を下げる一方、5 点でも
+    # 選択結果は 99% 以上一致する (実測) ため増やす利得がない。
+    # (固定グリッドなのは、データ依存グリッドだと選択イベントの追跡が
+    # 複雑になるため)。
+    parser.add_argument("--n_lambda", type=int, default=3)
     parser.add_argument("--lam_lo", type=float, default=-2.0)
     parser.add_argument("--lam_hi", type=float, default=-1.0)
     args = parser.parse_args()

@@ -57,11 +57,17 @@ def _lasso_coordinate_descent(y, X, n_samples, n_features, lam, max_iter, tol):
 
 
 def lasso(y, X, n_samples, n_features, alpha=0.1, max_iter=1000, tol=1e-4):
-    """固定 λ の Lasso を解き、絶対値最大の係数に対応する eta を返す。"""
+    """固定 λ の Lasso を解き、絶対値最大の係数に対応する eta を返す。
+
+    選択の追跡は marginal_screening と同じく argmax (「1 位が 1 位のまま」
+    という p-1 本の制約のみ) で行い、全順序を課す argsort より条件付けを
+    緩く保つ。λ が小さい設定 (max|x_j^T y|/n より下) では全係数 0 の
+    縮退解が起きないため、argmax のタイブレークが問題になることはない。
+    """
     coef = _lasso_coordinate_descent(
         y, X, n_samples, n_features, alpha, max_iter, tol
     )
-    idx = si.argsort(si.abs(coef))[-1]
+    idx = si.argmax(si.abs(coef))
     eta = (X.T @ X).inv() @ X.T
     return eta[idx]
 
@@ -108,9 +114,10 @@ def cv_r2_lasso(
     lam_star = lambda_grid[lam_star_idx]
 
     # Step 3: λ* で全データに Lasso を適用し変数選択
+    # (選択の追跡は lasso と同じく argmax。理由は lasso の docstring 参照)
     coef = _lasso_coordinate_descent(
         y, X, n_samples, n_features, lam_star, max_iter, tol
     )
-    idx = si.argsort(si.abs(coef))[-1]
+    idx = si.argmax(si.abs(coef))
     eta = (X.T @ X).inv() @ X.T
     return eta[idx]

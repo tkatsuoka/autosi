@@ -180,6 +180,11 @@ def run_single(task):
             "n_samples": n_samples,
             "n_features": p,
             "sigma2": sigma2,
+            # どの設定で走った結果かを CSV 単体で検証できるように記録する
+            "K": cfg["K"],
+            "n_lambda": cfg["n_lambda"],
+            "lam_lo": cfg["lam_lo"],
+            "lam_hi": cfg["lam_hi"],
             "selected_index": selected_index,
             # データ分割法の結果 (選択は前半のみで行うため別に記録)
             "ds_p_value": ds_p,
@@ -216,11 +221,11 @@ def main():
     parser.add_argument("--max_iter", type=int, default=1000)
     parser.add_argument("--tol", type=float, default=1e-4)
     parser.add_argument("--K", type=int, default=3)
-    # λ グリッドは logspace(lam_lo, lam_hi, n_lambda)
-    # = {0.01, 0.018, 0.032, 0.056, 0.1}。λ_max 付近の腕は CV に選ばれた際に
-    # 係数をほぼ潰し切って特徴選択が縮退するため、予測に有効な [0.01, 0.1]
-    # に絞る (synthetic 側と同じ既定)。
-    parser.add_argument("--n_lambda", type=int, default=5)
+    # λ グリッドは logspace(lam_lo, lam_hi, n_lambda) = {0.01, 0.032, 0.1}。
+    # λ_max 付近の腕は CV に選ばれた際に係数をほぼ潰し切って特徴選択が
+    # 縮退するため、予測に有効な [0.01, 0.1] に絞る (synthetic 側と同じ既定。
+    # 点数を絞る理由も synthetic 側のコメント参照)。
+    parser.add_argument("--n_lambda", type=int, default=3)
     parser.add_argument("--lam_lo", type=float, default=-2.0)
     parser.add_argument("--lam_hi", type=float, default=-1.0)
     args = parser.parse_args()
