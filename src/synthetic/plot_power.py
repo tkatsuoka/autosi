@@ -2,10 +2,10 @@
 
 横軸: 信号の傾き Δ、縦軸: power (= p 値 < α の割合)。
 (手法, データ種別) の組ごとに 2 枚出力する:
-  power_<method>_<data_type>.pdf        条件付き power
-                                        (= P(棄却 | 信号特徴量を選択))
-  power_uncond_<method>_<data_type>.pdf 無条件 power
-                                        (= P(信号特徴量を選択 かつ 棄却))
+  conditional_power_<method>_<data_type>.pdf  条件付き power
+                                              (= P(棄却 | 信号特徴量を選択))
+  marginal_power_<method>_<data_type>.pdf     周辺 power
+                                              (= P(信号特徴量を選択 かつ 棄却))
 proposed / w/o-pp / bonferroni / data splitting の 4 曲線を重ねて描く
 (色は FPR プロットと対応。naive は FPR を制御しない invalid な手法の
 ため power には描かない)。無条件 power は「選択に半分のデータしか
@@ -99,13 +99,13 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
                 label=label)
     ax.axhline(alpha, color="gray", ls="--", lw=1, label=f"alpha={alpha}")
     ax.set_xlabel("signal Δ")
-    ax.set_ylabel("power (select and reject)" if unconditional else "power")
+    ax.set_ylabel("marginal power" if unconditional else "conditional power")
     # ax.set_title(f"{method} ({data_type})")
     ax.set_ylim(0, 1.02)
     ax.grid(alpha=0.3)
     ax.legend()
     fig.tight_layout()
-    prefix = "power_uncond" if unconditional else "power"
+    prefix = "marginal_power" if unconditional else "conditional_power"
     path = os.path.join(outdir, f"{prefix}_{method}_{data_type}.pdf")
     fig.savefig(path)
     plt.close(fig)

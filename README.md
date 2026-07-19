@@ -185,12 +185,12 @@ uv run --extra experiments python src/synthetic/run_experiment.py --iter 10 --me
 #      (proposed/w/o-pp/naive/bonferroni/data splitting の5本)
 uv run --extra experiments python src/synthetic/plot_fpr.py --csv result/fpr
 
-# power: result/power_<method>_<data_type>.pdf        … 条件付き power
-#        result/power_uncond_<method>_<data_type>.pdf … 無条件 power
+# power: result/conditional_power_<method>_<data_type>.pdf … conditional power
+#        result/marginal_power_<method>_<data_type>.pdf    … marginal power
 #        (proposed/w/o-pp/bonferroni/data splitting の4本。naive は invalid の
-#         ため描かない。条件付き = P(棄却 | 信号特徴を選択)、
-#         無条件 = P(信号特徴を選択 かつ 棄却) = 選択成功率 × 条件付き power。
-#         無条件版は DS が選択に半分のデータしか使えない弱点も反映する)
+#         ため描かない。conditional = P(棄却 | 信号特徴を選択)、
+#         marginal = P(信号特徴を選択 かつ 棄却) = 選択成功率 × conditional。
+#         marginal 版は DS が選択に半分のデータしか使えない弱点も反映する)
 uv run --extra experiments python src/synthetic/plot_power.py --csv result/power
 
 # 使用する p 値の個数を条件ごとに 1000 件に揃える場合
