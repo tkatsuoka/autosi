@@ -1,10 +1,15 @@
 """検出力 (power) 実験の結果を (手法 × データ種別) ごとに折れ線グラフ化する。
 
 横軸: 信号の傾き Δ、縦軸: power (= p 値 < α の割合)。
-(手法, データ種別) の組ごとに別ファイル (result/power_<method>_<data_type>.pdf)
-を出力し、proposed / w/o-pp / bonferroni / data splitting の
-各 p 値の power 曲線を重ねて描く (色は FPR プロットと対応。
-naive は FPR を制御しない invalid な手法のため power には描かない)。
+(手法, データ種別) の組ごとに 2 枚出力する:
+  power_<method>_<data_type>.pdf        条件付き power
+                                        (= P(棄却 | 信号特徴量を選択))
+  power_uncond_<method>_<data_type>.pdf 無条件 power
+                                        (= P(信号特徴量を選択 かつ 棄却))
+proposed / w/o-pp / bonferroni / data splitting の 4 曲線を重ねて描く
+(色は FPR プロットと対応。naive は FPR を制御しない invalid な手法の
+ため power には描かない)。無条件 power は「選択に半分のデータしか
+使えない」という DS の弱点も反映した end-to-end の検出力比較になる。
 
 使い方 (CSV 単体でもフォルダでも可。フォルダは再帰的に全 CSV を読む):
   python src/synthetic/plot_power.py --csv result/power/lasso_iid_d0.1
@@ -52,8 +57,21 @@ def _power_curve(sub, p_col, flag_col, alpha, n_pvalues, label, method, data_typ
     )
 
 
-def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
-    """(手法, データ種別) 1 組の power 折れ線グラフ (横軸 Δ) を描く。"""
+def _selection_rate(sub, flag_col):
+    """Δ ごとの選択成功率 P(信号特徴量を選択) を全試行から集計して返す。"""
+    return sub.groupby("signal")[flag_col].mean().sort_index()
+
+
+def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
+             unconditional=False):
+    """(手法, データ種別) 1 組の power 折れ線グラフ (横軸 Δ) を描く。
+
+    unconditional=True では無条件 power = P(信号特徴量を選択 かつ 棄却)
+    = 選択成功率 × 条件付き power を描く。条件付き power は DS の
+    「選択に半分のデータしか使えない」弱点を分母から消してしまうため、
+    end-to-end の検出力の比較にはこちらが適する。選択成功率は全試行から
+    推定する (--n_pvalues は条件付き power 側にのみ適用)。
+    """
     # (凡例ラベル, p 値列, 信号選択フラグ列, 色番号)。色は plot_fpr と揃える
     # (naive = C2 は FPR を制御しない invalid な手法のため power には描かない)。
     # データ分割法は前半のみで選択するため、条件付けに使うフラグ列も別
@@ -72,17 +90,23 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
             continue
         power = _power_curve(sub, p_col, flag_col, alpha, n_pvalues,
                              label, method, data_type)
+        if unconditional:
+            if flag_col not in sub.columns:
+                continue
+            # 無条件 power = 選択成功率 × 条件付き power
+            power = power * _selection_rate(sub, flag_col)
         ax.plot(power.index, power.values, marker="o", color=f"C{i}",
                 label=label)
     ax.axhline(alpha, color="gray", ls="--", lw=1, label=f"alpha={alpha}")
     ax.set_xlabel("signal Δ")
-    ax.set_ylabel("power")
+    ax.set_ylabel("power (select and reject)" if unconditional else "power")
     # ax.set_title(f"{method} ({data_type})")
     ax.set_ylim(0, 1.02)
     ax.grid(alpha=0.3)
     ax.legend()
     fig.tight_layout()
-    path = os.path.join(outdir, f"power_{method}_{data_type}.pdf")
+    prefix = "power_uncond" if unconditional else "power"
+    path = os.path.join(outdir, f"{prefix}_{method}_{data_type}.pdf")
     fig.savefig(path)
     plt.close(fig)
     print(f"saved {path}")
@@ -102,10 +126,12 @@ def main():
     df = load_results(args.csv)
     os.makedirs(args.outdir, exist_ok=True)
 
-    # (手法, データ種別) の組ごとに 1 枚ずつ出力
+    # (手法, データ種別) の組ごとに条件付き / 無条件の 2 枚ずつ出力
     for (method, data_type), sub in df.groupby(["method", "data_type"]):
         plot_one(sub, method, data_type, args.alpha, args.outdir,
                  n_pvalues=args.n_pvalues)
+        plot_one(sub, method, data_type, args.alpha, args.outdir,
+                 n_pvalues=args.n_pvalues, unconditional=True)
 
 
 if __name__ == "__main__":
