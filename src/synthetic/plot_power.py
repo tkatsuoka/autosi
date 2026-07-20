@@ -106,7 +106,9 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
                 **line_style(label))
 
     ax.set_xticks(sigs)
+    # 主目盛 0.2 刻み + 補助目盛 (ラベルなし) 0.1 刻み (FPR の図と共通)
     ax.set_yticks(np.arange(0.0, 1.01, 0.2))
+    ax.set_yticks(np.arange(0.0, 1.01, 0.1), minor=True)
     ax.set_xlabel("Signal")
     # 縦軸ラベルは conditional / marginal ともに "Power" で統一
     # (どちらの図かはファイル名で区別する)

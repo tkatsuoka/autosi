@@ -55,7 +55,9 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
                 **line_style(label))
 
     ax.set_xticks(ns)
-    ax.set_yticks(np.arange(0.0, 1.01, 0.1))
+    # 主目盛は power の図と揃えて 0.2 刻み、補助目盛 (ラベルなし) を 0.1 刻み
+    ax.set_yticks(np.arange(0.0, 1.01, 0.2))
+    ax.set_yticks(np.arange(0.0, 1.01, 0.1), minor=True)
     ax.set_ylim(0.0, 1.0)
     ax.set_xlabel("Sample size")
     ax.set_ylabel("Type I Error Rate")
