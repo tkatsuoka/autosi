@@ -20,6 +20,7 @@ import os
 import sys
 import argparse
 
+import numpy as np
 import matplotlib.pyplot as plt
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -72,20 +73,25 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
     end-to-end の検出力の比較にはこちらが適する。選択成功率は全試行から
     推定する (--n_pvalues は条件付き power 側にのみ適用)。
     """
-    # (凡例ラベル, p 値列, 信号選択フラグ列, 色番号)。色は plot_fpr と揃える
-    # (naive = C2 は FPR を制御しない invalid な手法のため power には描かない)。
-    # データ分割法は前半のみで選択するため、条件付けに使うフラグ列も別
-    # (ds_is_signal)。
+    # (凡例ラベル, p 値列, 信号選択フラグ列, zorder)。描画順 = 凡例順 =
+    # 色サイクル順で plot_fpr と共通 (naive は FPR を制御しない invalid な
+    # 手法のため power には描かない)。データ分割法は前半のみで選択する
+    # ため、条件付けに使うフラグ列も別 (ds_is_signal)。
     curves = [
-        ("proposed", "p_value", "is_signal", 0),
-        ("w/o-pp", "oc_p_value", "is_signal", 1),
-        ("bonferroni", "bonferroni_p_value", "is_signal", 3),
-        ("data splitting", "ds_p_value", "ds_is_signal", 4),
+        ("proposed", "p_value", "is_signal", 10),
+        ("w/o-pp", "oc_p_value", "is_signal", 9),
+        ("bonferroni", "bonferroni_p_value", "is_signal", 8),
+        ("data splitting", "ds_p_value", "ds_is_signal", 7),
     ]
 
-    fig, ax = plt.subplots(figsize=(7, 5))
-    for label, p_col, flag_col, i in curves:
-        # 旧形式 CSV に列が無い場合は飛ばす (色番号は固定のまま)
+    plt.rcParams["font.size"] = 12
+    fig = plt.figure(figsize=(4, 4), dpi=100)
+    ax = fig.add_subplot(111)
+
+    sigs = sorted(sub["signal"].unique())
+    ax.plot(sigs, [alpha] * len(sigs), linestyle="dashed", color="black")
+    for label, p_col, flag_col, z in curves:
+        # 旧形式 CSV に列が無い場合は飛ばす
         if p_col not in sub.columns:
             continue
         power = _power_curve(sub, p_col, flag_col, alpha, n_pvalues,
@@ -95,19 +101,18 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
                 continue
             # 無条件 power = 選択成功率 × 条件付き power
             power = power * _selection_rate(sub, flag_col)
-        ax.plot(power.index, power.values, marker="o", color=f"C{i}",
-                label=label)
-    ax.axhline(alpha, color="gray", ls="--", lw=1, label=f"alpha={alpha}")
-    ax.set_xlabel("signal Δ")
-    ax.set_ylabel("marginal power" if unconditional else "conditional power")
-    # ax.set_title(f"{method} ({data_type})")
-    ax.set_ylim(0, 1.02)
-    ax.grid(alpha=0.3)
-    ax.legend()
-    fig.tight_layout()
+        ax.plot(power.index, power.values, "x-", label=label, zorder=z)
+
+    ax.set_xticks(sigs)
+    ax.set_yticks(np.arange(0.0, 1.01, 0.2))
+    ax.set_xlabel("Signal")
+    # 縦軸ラベルは conditional / marginal ともに "Power" で統一
+    # (どちらの図かはファイル名で区別する)
+    ax.set_ylabel("Power")
+    ax.legend(loc="upper left")
     prefix = "marginal_power" if unconditional else "conditional_power"
     path = os.path.join(outdir, f"{prefix}_{method}_{data_type}.pdf")
-    fig.savefig(path)
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.0)
     plt.close(fig)
     print(f"saved {path}")
 

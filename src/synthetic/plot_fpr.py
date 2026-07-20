@@ -13,6 +13,7 @@ import os
 import sys
 import argparse
 
+import numpy as np
 import matplotlib.pyplot as plt
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -23,43 +24,41 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
     """(手法, データ種別) 1 組の FPR 折れ線グラフ (横軸 n, 線 1 本) を描く。"""
     # 条件 (サンプル数) ごとに seed 順で先頭 n_pvalues 件だけ使う
     sub = limit_per_group(sub, ["n_samples"], n_pvalues)
-    # サンプル数ごとに type I error rate = P(p 値 < α) を集計
-    p_cols = {
-        "p_value": "proposed",
-        "oc_p_value": "w/o-pp",
-        "naive_p_value": "naive",
-        "bonferroni_p_value": "bonferroni",
-        "ds_p_value": "data splitting",
-    }
+    # (凡例ラベル, p 値列, zorder)。描画順 = 凡例順 = 色サイクル順で、
+    # zorder は proposed が最前面になるように振る (plot_power と共通の並び)
+    curves = [
+        ("proposed", "p_value", 10),
+        ("w/o-pp", "oc_p_value", 9),
+        ("bonferroni", "bonferroni_p_value", 8),
+        ("data splitting", "ds_p_value", 7),
+        ("naive", "naive_p_value", 6),
+    ]
 
-    fig, ax = plt.subplots(figsize=(7, 5)) # 凡例スペースのために少し横幅を広げています
+    plt.rcParams["font.size"] = 12
+    fig = plt.figure(figsize=(4, 4), dpi=100)
+    ax = fig.add_subplot(111)
 
-    # カラーサイクルのインデックス用
-    for i, (col, label) in enumerate(p_cols.items()):
-        # データに該当する列が存在しない場合の安全対策
+    ns = sorted(sub["n_samples"].unique())
+    ax.plot(ns, [alpha] * len(ns), linestyle="dashed", color="black")
+    for label, col, z in curves:
+        # データに該当する列が存在しない場合の安全対策 (旧形式 CSV)
         if col not in sub.columns:
             continue
-            
         # 各 p 値ごとに type I error rate = P(p 値 < α) を集計
         rate = (
             sub.assign(reject=sub[col] < alpha)
             .groupby("n_samples")["reject"].mean()
             .sort_index()
         )
-        
-        # 折れ線を描画 (C0, C1, C2... と自動で色が変わります)
-        ax.plot(rate.index, rate.values, marker="o", color=f"C{i}", label=label)
+        ax.plot(rate.index, rate.values, "x-", label=label, zorder=z)
 
-    ax.axhline(alpha, color="gray", ls="--", lw=1, label=f"alpha={alpha}")
-    ax.set_xlabel("number of samples n")
-    ax.set_ylabel("type I error rate")
-    # ax.set_title(f"{method} ({data_type})")
-    ax.set_ylim(0, 1.0)
-    ax.grid(alpha=0.3)
-    ax.legend()
-    fig.tight_layout()
+    ax.set_xticks(ns)
+    ax.set_yticks(np.arange(0.0, 0.51, 0.1))
+    ax.set_xlabel("Sample size")
+    ax.set_ylabel("Type I Error Rate")
+    ax.legend(loc="upper left")
     path = os.path.join(outdir, f"fpr_{method}_{data_type}.pdf")
-    fig.savefig(path)
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.0)
     plt.close(fig)
     print(f"saved {path}")
 
