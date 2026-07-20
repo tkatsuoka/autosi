@@ -53,7 +53,8 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
         ax.plot(rate.index, rate.values, "x-", label=label, zorder=z)
 
     ax.set_xticks(ns)
-    ax.set_yticks(np.arange(0.0, 0.51, 0.1))
+    ax.set_yticks(np.arange(0.0, 1.01, 0.1))
+    ax.set_ylim(0.0, 1.0)
     ax.set_xlabel("Sample size")
     ax.set_ylabel("Type I Error Rate")
     ax.legend(loc="upper left")
