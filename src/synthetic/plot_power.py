@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from src.common.merge_results import load_results, limit_per_group
+from src.common.plot_style import FIGSIZE, DPI, FONT_SIZE, save_legend
 
 
 def _power_curve(sub, p_col, flag_col, alpha, n_pvalues, label, method, data_type):
@@ -84,8 +85,8 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
         ("data splitting", "ds_p_value", "ds_is_signal", 7),
     ]
 
-    plt.rcParams["font.size"] = 12
-    fig = plt.figure(figsize=(4, 4), dpi=100)
+    plt.rcParams["font.size"] = FONT_SIZE
+    fig = plt.figure(figsize=FIGSIZE, dpi=DPI)
     ax = fig.add_subplot(111)
 
     sigs = sorted(sub["signal"].unique())
@@ -109,7 +110,7 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
     # 縦軸ラベルは conditional / marginal ともに "Power" で統一
     # (どちらの図かはファイル名で区別する)
     ax.set_ylabel("Power")
-    ax.legend(loc="upper left")
+    # 凡例は各図には描かず、共通の legend.pdf (save_legend) を使う
     prefix = "marginal_power" if unconditional else "conditional_power"
     path = os.path.join(outdir, f"{prefix}_{method}_{data_type}.pdf")
     fig.savefig(path, bbox_inches="tight", pad_inches=0.0)
@@ -137,6 +138,9 @@ def main():
                  n_pvalues=args.n_pvalues)
         plot_one(sub, method, data_type, args.alpha, args.outdir,
                  n_pvalues=args.n_pvalues, unconditional=True)
+
+    # 全図共通の凡例だけの PDF
+    save_legend(os.path.join(args.outdir, "legend.pdf"))
 
 
 if __name__ == "__main__":

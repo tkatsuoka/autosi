@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from src.common.merge_results import load_results, limit_per_group
+from src.common.plot_style import FIGSIZE, DPI, FONT_SIZE, save_legend
 
 
 def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
@@ -34,8 +35,8 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
         ("naive", "naive_p_value", 6),
     ]
 
-    plt.rcParams["font.size"] = 12
-    fig = plt.figure(figsize=(4, 4), dpi=100)
+    plt.rcParams["font.size"] = FONT_SIZE
+    fig = plt.figure(figsize=FIGSIZE, dpi=DPI)
     ax = fig.add_subplot(111)
 
     ns = sorted(sub["n_samples"].unique())
@@ -57,7 +58,7 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
     ax.set_ylim(0.0, 1.0)
     ax.set_xlabel("Sample size")
     ax.set_ylabel("Type I Error Rate")
-    ax.legend(loc="upper left")
+    # 凡例は各図には描かず、共通の legend.pdf (save_legend) を使う
     path = os.path.join(outdir, f"fpr_{method}_{data_type}.pdf")
     fig.savefig(path, bbox_inches="tight", pad_inches=0.0)
     plt.close(fig)
@@ -82,6 +83,9 @@ def main():
     for (method, data_type), sub in df.groupby(["method", "data_type"]):
         plot_one(sub, method, data_type, args.alpha, args.outdir,
                  n_pvalues=args.n_pvalues)
+
+    # 全図共通の凡例だけの PDF
+    save_legend(os.path.join(args.outdir, "legend.pdf"))
 
 
 if __name__ == "__main__":
