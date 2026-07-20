@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from src.common.merge_results import load_results, limit_per_group
-from src.common.plot_style import FIGSIZE, DPI, FONT_SIZE, save_legend
+from src.common.plot_style import FIGSIZE, DPI, FONT_SIZE, line_style, save_legend
 
 
 def _power_curve(sub, p_col, flag_col, alpha, n_pvalues, label, method, data_type):
@@ -102,7 +102,8 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
                 continue
             # 無条件 power = 選択成功率 × 条件付き power
             power = power * _selection_rate(sub, flag_col)
-        ax.plot(power.index, power.values, "x-", label=label, zorder=z)
+        ax.plot(power.index, power.values, label=label, zorder=z,
+                **line_style(label))
 
     ax.set_xticks(sigs)
     ax.set_yticks(np.arange(0.0, 1.01, 0.2))
@@ -139,8 +140,9 @@ def main():
         plot_one(sub, method, data_type, args.alpha, args.outdir,
                  n_pvalues=args.n_pvalues, unconditional=True)
 
-    # 全図共通の凡例だけの PDF
-    save_legend(os.path.join(args.outdir, "legend.pdf"))
+    # power の全図共通の凡例だけの PDF (naive は power に描かないため除く)
+    save_legend(os.path.join(args.outdir, "legend_power.pdf"),
+                labels=["proposed", "w/o-pp", "bonferroni", "data splitting"])
 
 
 if __name__ == "__main__":

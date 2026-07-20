@@ -181,9 +181,10 @@ uv run --extra experiments python src/synthetic/run_experiment.py --iter 10 --me
 
 出力フォルダを渡すだけ（中の `part_*.csv` を再帰的に読み込む。統合は不要）。
 (手法 × データ種別) の組ごとに別ファイルで折れ線グラフを出力する。
-図は黄金比サイズ・凡例なしで、全図共通の凡例 (手法を横一列に並べたもの)
-が `result/legend.pdf` として別途出力される (スタイル定義は
-src/common/plot_style.py に集約)。
+図は黄金比サイズ・凡例なしで、手法を横一列に並べた凡例だけの PDF が
+別途出力される: FPR 用 `legend_fpr.pdf` (naive 含む 5 手法) と
+power 用 `legend_power.pdf` (4 手法)。色対応は両者で共通
+(スタイル定義は src/common/plot_style.py に集約)。
 
 ```bash
 # FPR: result/fpr_<method>_<data_type>.pdf

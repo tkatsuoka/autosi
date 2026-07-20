@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from src.common.merge_results import load_results, limit_per_group
-from src.common.plot_style import FIGSIZE, DPI, FONT_SIZE, save_legend
+from src.common.plot_style import FIGSIZE, DPI, FONT_SIZE, line_style, save_legend
 
 
 def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
@@ -51,7 +51,8 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
             .groupby("n_samples")["reject"].mean()
             .sort_index()
         )
-        ax.plot(rate.index, rate.values, "x-", label=label, zorder=z)
+        ax.plot(rate.index, rate.values, label=label, zorder=z,
+                **line_style(label))
 
     ax.set_xticks(ns)
     ax.set_yticks(np.arange(0.0, 1.01, 0.1))
@@ -84,8 +85,8 @@ def main():
         plot_one(sub, method, data_type, args.alpha, args.outdir,
                  n_pvalues=args.n_pvalues)
 
-    # 全図共通の凡例だけの PDF
-    save_legend(os.path.join(args.outdir, "legend.pdf"))
+    # FPR の全図共通の凡例だけの PDF (naive を含む 5 手法)
+    save_legend(os.path.join(args.outdir, "legend_fpr.pdf"))
 
 
 if __name__ == "__main__":
