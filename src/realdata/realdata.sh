@@ -18,11 +18,20 @@
 set -euo pipefail
 source "$(dirname "$0")/../pbs_common.sh"
 
+# 実データは 1 条件 110 試行と小さく 96 コアでは遊ぶため、1 ジョブ 11 コア
+# (110 試行 ÷ 11 ワーカー = 10 巡) に絞り、96 コアノードに 8 ジョブ相乗り
+# させる。メモリも 1 ノード分 512gb の 1/8 に按分。cv_r2_lasso でも
+# 余裕を持てるよう実行時間上限は 240 時間にする (-w で変更可)。
+WORKERS=11
+MEM_PER_NODE="64gb"
+WALLTIME="240:00:00"
+
 METHOD=lasso
 DATASETS="airfoil concrete energy_heating energy_cooling gas_turbine real_estate wine_red wine_white"
 NLIST="100 150 200"          # サブサンプルのサイズ n のリスト (論文と同じ)
-NSPLIT=10                    # (データセット, n) ごとのジョブ数 (= 分割数)
-PER=110                      # 1 ジョブが計算する p 値の個数 (10 分割 × 110 = 1100、エラー時の不足に備え 1 割の余裕)
+NSPLIT=1                     # (データセット, n) ごとのジョブ数 (= 分割数)
+PER=110                      # 1 ジョブが計算する p 値の個数 (1 ジョブ × 110 = 110 本/条件。
+                             # 実質目標 100 本 + エラー時の不足に備えた 1 割の余裕)
 
 while getopts "m:D:N:n:p:w:q:" o; do case $o in
     m) METHOD=$OPTARG;; D) DATASETS=$OPTARG;; N) NLIST=$OPTARG;;
