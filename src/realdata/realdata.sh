@@ -28,7 +28,7 @@ WALLTIME="240:00:00"
 
 METHOD=lasso
 DATASETS="airfoil concrete energy_heating energy_cooling gas_turbine real_estate wine_red wine_white"
-NLIST="100 150 200"          # サブサンプルのサイズ n のリスト (論文と同じ)
+NLIST="100"                  # サブサンプルのサイズ n のリスト (-N "100 150 200" で論文と同じ 3 水準に)
 NSPLIT=1                     # (データセット, n) ごとのジョブ数 (= 分割数)
 PER=110                      # 1 ジョブが計算する p 値の個数 (1 ジョブ × 110 = 110 本/条件。
                              # 実質目標 100 本 + エラー時の不足に備えた 1 割の余裕)
