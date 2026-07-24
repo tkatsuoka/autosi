@@ -84,15 +84,18 @@ def _pick_from_active(coef, n_features, pick_u):
 
     非零パターンは座標降下の soft-threshold 分岐 (追跡済み) で決まるため、
     追跡区間の内側では集合が不変で、.data から読み出してよい。
-    全係数 0 の縮退解 (λ が max|x_j^T y|/n を超えた場合のみ) は保険として
-    全特徴からの選択に落とす。
+    全係数 0 の縮退解では選択自体が成立しないため、last_active_set には
+    空集合をそのまま記録する (観測データで空なら runner 側が試行をスキップ
+    する。si4pipeline も空集合は推論エラー = 失敗扱い)。z 直線の探索中に
+    空になる領域ではアルゴリズムは何かを返す必要があるため、選択だけは
+    全特徴へのフォールバックで定義しておく (観測出力とは一致しないので
+    条件付け領域には入らない)。
     """
     active = np.flatnonzero(np.abs(coef.data) > 0).tolist()
-    if not active:
-        active = list(range(n_features))
     global last_active_set
     last_active_set = active
-    return active, _pick_from(active, pick_u)
+    pick_pool = active if active else list(range(n_features))
+    return pick_pool, _pick_from(pick_pool, pick_u)
 
 
 def lasso(y, X, n_samples, n_features, alpha=0.1, max_iter=1000, tol=1e-4,

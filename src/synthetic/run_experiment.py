@@ -98,7 +98,11 @@ def _data_split_p_value(method, X_np, y_np, Sigma, cfg):
     # 前半: 他手法と同じアルゴリズムを 1 回だけ実行して特徴を選ぶ
     X1 = si.siarray(X1_np)
     algorithm = _build_algorithm(method, X1, cfg)
+    methods_lib.last_active_set = None
     eta1 = algorithm(si.siarray(y1_np))
+    ds_active = methods_lib.last_active_set
+    if ds_active is not None and len(ds_active) == 0:
+        raise RuntimeError("データ分割法: 前半で特徴が選ばれなかった")
     selected = int(np.argmax(eta1.data @ X1_np))
 
     # 後半: 選択に使っていないデータで OLS 係数の z 検定
@@ -141,6 +145,10 @@ def run_single(task):
         methods_lib.last_active_set = None
         eta = algorithm(y)
         active_set = methods_lib.last_active_set
+        # 特徴が 1 つも選ばれなかった試行は検定対象が存在しないためスキップ
+        # (si4pipeline でも空集合は推論エラー = 失敗扱い)
+        if active_set is not None and len(active_set) == 0:
+            raise RuntimeError("特徴集合が空 (選択された特徴なし)")
 
         # 観測データで実際に選択された特徴量を復元する。
         # eta は (XᵀX)⁻¹Xᵀ の選択行なので eta·X ≈ e_idx (選択位置だけ 1) になる。
