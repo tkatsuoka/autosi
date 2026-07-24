@@ -24,7 +24,7 @@ NSAMPLES=200                 # サンプル数 n (固定、si4pipeline の power
 NSPLIT=10                    # Δ ごとのジョブ数 (= 分割数)
 PER=110                      # 1 ジョブが集める有効 p 値の本数 (is_signal / ds_is_signal 各基準)。
                              # 動的モードで不足分は自動追加されるため 10 分割 × 110 = 1100 本/条件が保証される
-SIGNALS="0.2 0.4 0.6 0.8"    # 横軸となる信号 Δ のリスト (si4pipeline と同じ)
+SIGNALS="0.1 0.2 0.3 0.4"    # 横軸となる信号 Δ のリスト
 N_SIGNAL=3
 SEED_STRIDE=10000            # part ごとの seed ブロック幅 (動的モードは試行数が変動するため重複防止)
 
