@@ -1,10 +1,10 @@
 """実験用データ生成モジュール。
 
-src/ref/dataset.py の generate_images_corr に倣い、相関ノイズは
-共分散 Sigma[i, j] = 0.5^|i-j| (AR(1) 型) を multivariate_normal で生成する。
+相関構造は共分散 Sigma[i, j] = 0.5^|i-j| (AR(1) 型) を使う。
 
-- iid:        ノイズ共分散が単位行列 (各観測が独立同分布)
-- corr: ノイズ共分散が AR(1) 型 (隣接観測ほど強く相関)
+- iid:  ノイズ共分散が単位行列、X も iid (各観測が独立同分布)
+- corr: ノイズと X の各列の両方が行方向に AR(1) で相関する時系列的な
+        依存データ (隣接観測ほど強く相関)
 
 signal=0 のとき null 仮説 (FPR / p 値の一様性の検証)、
 signal>0 のとき対立仮説 (検出力 power の検証) になる。
@@ -59,16 +59,21 @@ def generate_data(
         k = min(n_signal, n_features)
         beta[:k] = signal
 
-    X = rng.standard_normal((n_samples, n_features))
-
     if data_type == "iid":
         # 各観測は独立同分布。共分散はスカラー 1.0 で表現できる。
+        X = rng.standard_normal((n_samples, n_features))
         noise = rng.standard_normal(n_samples)
         Sigma = 1.0
 
     elif data_type == "corr":
-        # AR(1) 型共分散をもつ相関ノイズを生成 (ref/dataset.py と同方式)。
+        # 時系列的な依存データ: ノイズだけでなく X の各列も同じ AR(1) 構造で
+        # 行方向に相関させる (各列の周辺分散は 1 のまま)。X も相関させるのは、
+        # 分割された半分どうしが共変量経由でも結び付き、データ分割法の
+        # 「選択と検定の独立性」が実際に破れるようにするため。proposed は
+        # X を固定計画として扱い y の共分散 Sigma を厳密に使うので影響しない。
         Sigma = _ar1_cov(n_samples, rho)
+        L = np.linalg.cholesky(Sigma)
+        X = L @ rng.standard_normal((n_samples, n_features))
         noise = rng.multivariate_normal(np.zeros(n_samples), Sigma)
 
     else:
