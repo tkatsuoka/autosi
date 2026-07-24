@@ -123,9 +123,13 @@ def _data_split_p_value(method, X_np, y_np, sigma2, seed, cfg):
     (p_value, selected_index)
     """
     n, p = X_np.shape
-    n1 = n // 2
-    X1_np, X2_np = X_np[:n1], X_np[n1:]
-    y1_np, y2_np = y_np[:n1], y_np[n1:]
+    # 合成側と分割規則を揃えて交互 (奇数番目/偶数番目) に 2 分割する。
+    # サブサンプルの行順はランダムなので統計的には任意の分割と同等
+    idx1 = np.arange(0, n, 2)
+    idx2 = np.arange(1, n, 2)
+    n1 = len(idx1)
+    X1_np, X2_np = X_np[idx1], X_np[idx2]
+    y1_np, y2_np = y_np[idx1], y_np[idx2]
 
     # 前半: 他手法と同じアルゴリズム (y 中心化込み) を 1 回実行して特徴を選ぶ
     X1 = si.siarray(X1_np)

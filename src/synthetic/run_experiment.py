@@ -80,20 +80,29 @@ def _build_algorithm(method, X, cfg):
 
 
 def _data_split_p_value(method, X_np, y_np, Sigma, cfg):
-    """データ分割法 (比較手法): 前半で特徴選択し、後半で古典的 z 検定を行う。
+    """データ分割法 (比較手法): 半分で特徴選択し、残り半分で古典的 z 検定を行う。
 
     他手法と同じ n 行を半分ずつ選択と推論に使うため、データ量はフェア。
-    推論半分は選択と独立なので通常の z 検定で valid になる
-    (corr ノイズでは分割間に相関が残るため厳密には近似)。
+    分割は交互 (奇数番目/偶数番目)。iid では行が交換可能なので通常の
+    z 検定で valid になるが、corr (AR(1)) では隣接観測の相関により
+    選択半分と推論半分が独立でなくなり、DS は type I error を制御できない
+    (依存データにおける DS の限界を示す)。
 
     Returns
     -------
     (p_value, selected_index)
     """
     n = X_np.shape[0]
-    n1 = n // 2
-    X1_np, X2_np = X_np[:n1], X_np[n1:]
-    y1_np, y2_np = y_np[:n1], y_np[n1:]
+    # 交互 (奇数番目/偶数番目) に 2 分割する。iid では行が交換可能なので
+    # どんな分割でも同じだが、corr (AR(1)) では隣接観測が最も強く相関する
+    # ため、交互分割では前半と後半の独立性が成り立たず、DS の「選択と検定
+    # の独立」という前提が壊れてバイアスが乗る (相関データでの DS の限界を
+    # 示す設計)。proposed は Σ を厳密に扱うため影響を受けない。
+    idx1 = np.arange(0, n, 2)
+    idx2 = np.arange(1, n, 2)
+    n1 = len(idx1)
+    X1_np, X2_np = X_np[idx1], X_np[idx2]
+    y1_np, y2_np = y_np[idx1], y_np[idx2]
 
     # 前半: 他手法と同じアルゴリズムを 1 回だけ実行して特徴を選ぶ
     X1 = si.siarray(X1_np)
@@ -114,7 +123,8 @@ def _data_split_p_value(method, X_np, y_np, Sigma, cfg):
     if np.isscalar(Sigma):
         var_stat = float(Sigma) * float(eta2 @ eta2)
     else:
-        var_stat = float(eta2 @ Sigma[n1:, n1:] @ eta2)
+        # 後半 (偶数番目) に対応する共分散の部分行列を使う
+        var_stat = float(eta2 @ Sigma[np.ix_(idx2, idx2)] @ eta2)
     p_value = float(2.0 * norm.sf(abs(stat) / np.sqrt(var_stat)))
     return p_value, selected
 
@@ -337,7 +347,7 @@ def main():
     parser.add_argument("--max_trials", type=int, default=None,
                         help="動的モードの試行数上限 (既定: target の 50 倍)。"
                              "選択成功率が極端に低い設定での暴走防止")
-    parser.add_argument("--n_samples", type=int, default=100)
+    parser.add_argument("--n_samples", type=int, default=200)
     parser.add_argument("--n_features", type=int, default=20,
                         help="特徴量数 p")
     parser.add_argument("--signal", type=float, default=0.0,
