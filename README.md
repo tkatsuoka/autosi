@@ -62,9 +62,11 @@ uv が extras を外して環境を再同期してしまい pandas 等が消え�
 
 - 特徴量数 p = 20（`--n_features` 既定 20。cv_r2_lasso は p に対して計算時間が
   伸びやすい点に注意）
-- 信号特徴量数 = 1（`--n_signal` 既定 1、β の先頭要素のみ Δ。複数の同格
-  信号があると「1 位 vs 2 位の競争」への条件付けで proposed の検出力が
-  頭打ちになるため、argmax 1 本を検定する本実験では 1 が自然な設定）
+- 信号特徴量数 = 3（`--n_signal` 既定 3、β の先頭3要素を Δ）
+- **検定対象は選択された特徴集合から一様ランダムに 1 つ**（乱数 pick_u は
+  y と独立に seed から固定するため選択イベントとして正しく追跡される）。
+  marginal screening は |Xᵀy| 上位 k 個（`--ms_k` 既定 3）、lasso /
+  cv_r2_lasso はアクティブ集合（係数非零の特徴）が「選択された集合」
 - FPR: n ∈ {100, 200, 300, 400}（`fpr.sh -N`）
 - power: Δ ∈ {0.1, 0.2, 0.3, 0.4}, n = 100 固定（`power.sh -N` で変更可）
 - Lasso の正則化は sklearn と同じ規約 (1/(2n))‖y−Xβ‖² + α‖β‖₁（`--alpha` 既定 0.1）
@@ -157,7 +159,7 @@ bash src/synthetic/power.sh -m cv_r2_lasso        -d iid
 |--------|------|------|
 | `-N` | サンプル数 n (固定値) | 100 |
 | `-s` | Δ のリスト (横軸) | "0.1 0.2 0.3 0.4" |
-| `-k` | 信号を載せる先頭特徴量の数 | 1 |
+| `-k` | 信号を載せる先頭特徴量の数 | 3 |
 | `-p` | 1ジョブが集める有効 p 値の本数 (10 分割 × 110 = 1100 本/条件) | 110 |
 
 ### ローカルで直接実行する場合
@@ -170,7 +172,8 @@ uv run --extra experiments python src/synthetic/run_experiment.py --iter 10 --me
 主なオプション: `--iter` 反復回数 / `--workers` 並列数 /
 `--methods` `--data_types` カンマ区切りの対象 /
 `--n_samples` (既定 100) `--n_features` (既定 20) `--signal` (0=null)
-`--n_signal` (既定 1) / `--seed_start` `--seed_end` `--seed_offset`
+`--n_signal` (既定 3) `--ms_k` (ms の特徴集合サイズ、既定 3) /
+`--seed_start` `--seed_end` `--seed_offset`
 ジョブ分割用 seed 範囲 / `--target_pvalues` 動的モード (有効 p 値がこの
 本数に達するまで試行を追加。指定時は `--iter`/`--seed_end` を無視) /
 `--max_trials` 動的モードの試行数上限 (既定: target の 50 倍) /
@@ -297,8 +300,10 @@ seed 順の先頭から揃えられる (既定は全件)。
 | signal | 信号の傾き Δ (0 = null) |
 | n_signal | 信号を載せた特徴量数 |
 | K / n_lambda / lam_lo / lam_hi | cv のハイパラ (どの設定で走った結果かの検証用) |
-| selected_index | 観測データで選ばれた特徴量の番号 |
-| is_signal | 選ばれた特徴量が真に信号を持つか (power の条件付けに使用) |
+| selected_index | 検定対象の特徴量の番号 (選択された集合から乱数で 1 つ選んだもの) |
+| is_signal | 検定対象の特徴量が真に信号を持つか (power の条件付けに使用) |
+| active_set | 選択された特徴集合 (ms は \|Xᵀy\| 上位 k 個、lasso/cv は係数非零の特徴。"\|" 区切り) |
+| active_size | 選択された特徴集合の要素数 |
 | ds_p_value | データ分割法の p 値 (前半で選択、後半で z 検定) |
 | ds_selected_index | データ分割法 (前半のみ) で選ばれた特徴量の番号 |
 | ds_is_signal | データ分割法の選択が真に信号を持つか (power の条件付けに使用) |

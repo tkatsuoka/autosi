@@ -42,6 +42,7 @@ from tqdm import tqdm
 
 import autosi as si
 from src.synthetic.data import generate_data
+from src.common import methods as methods_lib
 from src.common.methods import marginal_screening, lasso, cv_r2_lasso
 
 METHODS = ["marginal_screening", "lasso", "cv_r2_lasso"]
@@ -49,14 +50,20 @@ DATA_TYPES = ["iid", "corr"]
 
 
 def _build_algorithm(method, X, cfg):
-    """method 名に応じて y のみを引数に取るアルゴリズム関数を構築する。"""
+    """method 名に応じて y のみを引数に取るアルゴリズム関数を構築する。
+
+    pick_u は「選択された特徴集合のうちどれを検定するか」を決める乱数で、
+    y と独立に seed から固定される (run_single で cfg に注入)。
+    """
     n, p = X.shape
     if method == "marginal_screening":
-        return partial(marginal_screening, X=X)
+        return partial(marginal_screening, X=X, k=cfg["ms_k"],
+                       pick_u=cfg["pick_u"])
     if method == "lasso":
         return partial(
             lasso, X=X, n_samples=n, n_features=p,
             alpha=cfg["alpha"], max_iter=cfg["max_iter"], tol=cfg["tol"],
+            pick_u=cfg["pick_u"],
         )
     if method == "cv_r2_lasso":
         # fold は反復ごとに固定 (CV の分割を eta 計算と inference で一致させる)
@@ -67,6 +74,7 @@ def _build_algorithm(method, X, cfg):
             cv_r2_lasso, X=X, n_samples=n, n_features=p,
             fold_indices=fold_indices, lambda_grid=lambda_grid,
             K=cfg["K"], max_iter=cfg["max_iter"], tol=cfg["tol"],
+            pick_u=cfg["pick_u"],
         )
     raise ValueError(f"unknown method: {method}")
 
@@ -122,10 +130,17 @@ def run_single(task):
         X = si.siarray(X_np)
         y = si.siarray(y_np)
 
-        cfg_local = dict(cfg, fold_seed=seed)
+        # 検定対象のランダム選択用の乱数。データ生成 (seed) や CV fold と
+        # 独立になるようシード列で分離する
+        pick_u = float(np.random.default_rng([seed, 987654321]).uniform())
+        cfg_local = dict(cfg, fold_seed=seed, pick_u=pick_u)
         algorithm = _build_algorithm(method, X, cfg_local)
 
+        # 観測データでのアクティブ集合 (lasso/cv のみ)。前タスクの値が
+        # 残らないようリセットし、DS や推論が上書きする前に取り出す
+        methods_lib.last_active_set = None
         eta = algorithm(y)
+        active_set = methods_lib.last_active_set
 
         # 観測データで実際に選択された特徴量を復元する。
         # eta は (XᵀX)⁻¹Xᵀ の選択行なので eta·X ≈ e_idx (選択位置だけ 1) になる。
@@ -186,6 +201,9 @@ def run_single(task):
             # power を「実際に信号が載った特徴量が選ばれた試行」のみで測るための情報
             "selected_index": selected_index,
             "is_signal": is_signal,
+            # lasso/cv のアクティブ集合 (係数非零の特徴、"|" 区切り。ms は空欄)
+            "active_set": "" if active_set is None else "|".join(map(str, active_set)),
+            "active_size": None if active_set is None else len(active_set),
             # データ分割法の結果 (選択は前半のみで行うため別に記録)
             "ds_p_value": ds_p,
             "ds_selected_index": ds_selected,
@@ -314,8 +332,11 @@ def main():
                         help="特徴量数 p")
     parser.add_argument("--signal", type=float, default=0.0,
                         help="真の係数の傾き Δ (0=null/FPR, >0=power)")
-    parser.add_argument("--n_signal", type=int, default=1,
+    parser.add_argument("--n_signal", type=int, default=3,
                         help="信号を載せる先頭特徴量の数")
+    parser.add_argument("--ms_k", type=int, default=3,
+                        help="marginal screening が選ぶ特徴集合の大きさ "
+                             "(この中から乱数で 1 つを検定する)")
     parser.add_argument("--out", type=str, default="result/experiment_results.csv")
     # lasso / cv 共通ハイパラ
     parser.add_argument("--alpha", type=float, default=0.1,
@@ -345,6 +366,7 @@ def main():
         "n_features": args.n_features,
         "signal": args.signal,
         "n_signal": args.n_signal,
+        "ms_k": args.ms_k,
         "alpha": args.alpha,
         "max_iter": args.max_iter,
         "tol": args.tol,

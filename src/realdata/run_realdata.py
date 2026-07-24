@@ -38,6 +38,7 @@ from scipy.stats import norm
 from tqdm import tqdm
 
 import autosi as si
+from src.common import methods as methods_lib
 from src.common.methods import marginal_screening, lasso, cv_r2_lasso
 from src.realdata.datasets import DATASET_NAMES, load_dataset
 
@@ -74,13 +75,19 @@ def _estimate_sigma2(X, y):
 
 
 def _build_algorithm(method, X, n, p, seed, cfg):
-    """y の中心化 + 特徴選択を行うアルゴリズム関数を構築する。"""
+    """y の中心化 + 特徴選択を行うアルゴリズム関数を構築する。
+
+    検定対象は選択された特徴集合から乱数 pick_u で 1 つ選ぶ
+    (synthetic 側と同じ規則。pick_u は run_single で cfg に注入)。
+    """
     if method == "marginal_screening":
-        base = partial(marginal_screening, X=X)
+        base = partial(marginal_screening, X=X, k=cfg["ms_k"],
+                       pick_u=cfg["pick_u"])
     elif method == "lasso":
         base = partial(
             lasso, X=X, n_samples=n, n_features=p,
             alpha=cfg["alpha"], max_iter=cfg["max_iter"], tol=cfg["tol"],
+            pick_u=cfg["pick_u"],
         )
     elif method == "cv_r2_lasso":
         rng = np.random.default_rng(seed)
@@ -90,6 +97,7 @@ def _build_algorithm(method, X, n, p, seed, cfg):
             cv_r2_lasso, X=X, n_samples=n, n_features=p,
             fold_indices=fold_indices, lambda_grid=lambda_grid,
             K=cfg["K"], max_iter=cfg["max_iter"], tol=cfg["tol"],
+            pick_u=cfg["pick_u"],
         )
     else:
         raise ValueError(f"unknown method: {method}")
@@ -147,9 +155,16 @@ def run_single(task):
 
         X = si.siarray(X_np)
         y = si.siarray(y_np)
+        # 検定対象のランダム選択用の乱数 (サブサンプリングの seed と分離)
+        pick_u = float(np.random.default_rng([seed, 987654321]).uniform())
+        cfg = dict(cfg, pick_u=pick_u)
         algorithm = _build_algorithm(method, X, n, p, seed, cfg)
 
+        # 観測データでのアクティブ集合 (lasso/cv のみ)。前タスクの値が
+        # 残らないようリセットし、DS や推論が上書きする前に取り出す
+        methods_lib.last_active_set = None
         eta = algorithm(y)
+        active_set = methods_lib.last_active_set
         # eta は (XtX)^-1 Xt の選択行なので eta・X = e_idx から選択特徴を復元
         selected_index = int(np.argmax(eta.data @ X_np))
 
@@ -186,6 +201,9 @@ def run_single(task):
             "lam_lo": cfg["lam_lo"],
             "lam_hi": cfg["lam_hi"],
             "selected_index": selected_index,
+            # lasso/cv のアクティブ集合 (係数非零の特徴、"|" 区切り。ms は空欄)
+            "active_set": "" if active_set is None else "|".join(map(str, active_set)),
+            "active_size": None if active_set is None else len(active_set),
             # データ分割法の結果 (選択は前半のみで行うため別に記録)
             "ds_p_value": ds_p,
             "ds_selected_index": ds_selected,
@@ -221,6 +239,9 @@ def main():
     parser.add_argument("--max_iter", type=int, default=1000)
     parser.add_argument("--tol", type=float, default=1e-4)
     parser.add_argument("--K", type=int, default=3)
+    parser.add_argument("--ms_k", type=int, default=3,
+                        help="marginal screening が選ぶ特徴集合の大きさ "
+                             "(この中から乱数で 1 つを検定する)")
     # λ グリッドは logspace(lam_lo, lam_hi, n_lambda) = {0.01, 0.032, 0.1}。
     # λ_max 付近の腕は CV に選ばれた際に係数をほぼ潰し切って特徴選択が
     # 縮退するため、予測に有効な [0.01, 0.1] に絞る (synthetic 側と同じ既定。
@@ -234,6 +255,7 @@ def main():
         "alpha": args.alpha, "max_iter": args.max_iter, "tol": args.tol,
         "K": args.K, "n_lambda": args.n_lambda,
         "lam_lo": args.lam_lo, "lam_hi": args.lam_hi,
+        "ms_k": args.ms_k,
     }
 
     methods = [m for m in args.methods.split(",") if m]
