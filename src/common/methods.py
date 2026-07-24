@@ -20,23 +20,40 @@ import numpy as np
 import autosi as si
 
 # 直近に実行した手法の選択特徴集合 (ms は top-k、lasso/cv は係数が非零の
-# 特徴のインデックス列)。アルゴリズムの戻り値は eta 1 本に固定されている
-# (si.inference の要求) ため、副産物はこの変数経由で取り出す。
-# si.inference の探索中にも上書きされるので、観測データでの実行直後に
-# 読み取ること。
+# 特徴のインデックス列) と、検定対象に選ばれた特徴番号。アルゴリズムの
+# 戻り値は eta 1 本に固定されている (si.inference の要求) ため、副産物は
+# この変数経由で取り出す。si.inference の探索中にも上書きされるので、
+# 観測データでの実行直後に読み取ること。
 last_active_set = None
+last_picked = None
 
 
-def _pick_from(indices, pick_u):
-    """特徴集合 (昇順リスト) から乱数 pick_u ∈ [0,1) で 1 つ選ぶ。
+def _pick_pos(indices, pick_u):
+    """特徴集合 (昇順リスト) の中で乱数 pick_u ∈ [0,1) が指す位置を返す。
 
     選択は集合のサイズと pick_u のみに依存する (y には依存しない)。
     """
-    return indices[int(pick_u * len(indices)) % len(indices)]
+    return int(pick_u * len(indices)) % len(indices)
+
+
+def _eta_selected_model(X, active, pos):
+    """選択された特徴集合だけの重回帰 (X_M^T X_M)^{-1} X_M^T の pos 行を返す。
+
+    検定統計量は「選択されたモデル X_M における係数」(selected model、
+    si4pipeline と同じ estimand)。X は定数で、active は追跡済みイベント
+    (top-k / 非零パターン) で決まるため、追跡区間の内側では eta も定数。
+    集合が変われば eta 自体が変わるので、出力一致による集約は
+    {M(z) = M_obs} での条件付けになる (pick_u が固定なら検定対象は M の
+    決定的な関数なので、これは si4pipeline の M_Y = M_y と同じ 1 条件)。
+    """
+    X_M = X.data[:, active]
+    eta_np = np.linalg.solve(X_M.T @ X_M, X_M.T)[pos]
+    return si.siarray(eta_np)
 
 
 def marginal_screening(y, X, k=3, pick_u=0.0):
-    """|X^T y| 上位 k 個の特徴集合から乱数で 1 つ選び、その eta を返す。
+    """|X^T y| 上位 k 個の特徴集合から乱数で 1 つ選び、その特徴の
+    選択モデル重回帰係数に対応する eta を返す。
 
     top-k 集合の同定には argsort (全順序の追跡) を使う。集合は昇順に
     並べ替えてから選ぶため、検定対象は「どの k 個が上位か」だけに依存し、
@@ -46,10 +63,11 @@ def marginal_screening(y, X, k=3, pick_u=0.0):
     order = si.argsort(si.abs(corr))
     k = min(k, X.shape[1])
     topk = sorted(int(i) for i in order.data[-k:])
-    global last_active_set
+    global last_active_set, last_picked
     last_active_set = topk
-    eta = (X.T @ X).inv() @ X.T
-    return eta[_pick_from(topk, pick_u)]
+    pos = _pick_pos(topk, pick_u)
+    last_picked = topk[pos]
+    return _eta_selected_model(X, topk, pos)
 
 
 def _lasso_coordinate_descent(y, X, n_samples, n_features, lam, max_iter, tol):
@@ -92,21 +110,23 @@ def _pick_from_active(coef, n_features, pick_u):
     条件付け領域には入らない)。
     """
     active = np.flatnonzero(np.abs(coef.data) > 0).tolist()
-    global last_active_set
+    global last_active_set, last_picked
     last_active_set = active
     pick_pool = active if active else list(range(n_features))
-    return pick_pool, _pick_from(pick_pool, pick_u)
+    pos = _pick_pos(pick_pool, pick_u)
+    last_picked = pick_pool[pos]
+    return pick_pool, pos
 
 
 def lasso(y, X, n_samples, n_features, alpha=0.1, max_iter=1000, tol=1e-4,
           pick_u=0.0):
-    """固定 λ の Lasso を解き、アクティブ集合から乱数で選んだ eta を返す。"""
+    """固定 λ の Lasso を解き、アクティブ集合から乱数で選んだ特徴の
+    選択モデル重回帰係数に対応する eta を返す。"""
     coef = _lasso_coordinate_descent(
         y, X, n_samples, n_features, alpha, max_iter, tol
     )
-    _, idx = _pick_from_active(coef, n_features, pick_u)
-    eta = (X.T @ X).inv() @ X.T
-    return eta[idx]
+    pool, pos = _pick_from_active(coef, n_features, pick_u)
+    return _eta_selected_model(X, pool, pos)
 
 
 def cv_r2_lasso(
@@ -156,6 +176,5 @@ def cv_r2_lasso(
     coef = _lasso_coordinate_descent(
         y, X, n_samples, n_features, lam_star, max_iter, tol
     )
-    _, idx = _pick_from_active(coef, n_features, pick_u)
-    eta = (X.T @ X).inv() @ X.T
-    return eta[idx]
+    pool, pos = _pick_from_active(coef, n_features, pick_u)
+    return _eta_selected_model(X, pool, pos)

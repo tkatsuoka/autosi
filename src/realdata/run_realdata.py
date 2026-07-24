@@ -135,12 +135,15 @@ def _data_split_p_value(method, X_np, y_np, sigma2, seed, cfg):
     ds_active = methods_lib.last_active_set
     if ds_active is not None and len(ds_active) == 0:
         raise RuntimeError("データ分割法: 前半で特徴が選ばれなかった")
-    selected = int(np.argmax(eta1.data @ X1_np))
+    selected = int(methods_lib.last_picked)
 
-    # 後半: 半分内で中心化し、選択に使っていないデータで OLS 係数の z 検定
+    # 後半: 半分内で中心化し、前半で選ばれた特徴集合だけの重回帰係数を
+    # z 検定 (選択モデル。proposed と同じ estimand で公平に揃える)
     X2c = X2_np - X2_np.mean(axis=0)
     y2c = y2_np - y2_np.mean()
-    eta2 = np.linalg.solve(X2c.T @ X2c, X2c.T)[selected]
+    pos = ds_active.index(selected)
+    X2_M = X2c[:, ds_active]
+    eta2 = np.linalg.solve(X2_M.T @ X2_M, X2_M.T)[pos]
     stat = float(eta2 @ y2c)
     var_stat = sigma2 * float(eta2 @ eta2)
     p_value = float(2.0 * norm.sf(abs(stat) / np.sqrt(var_stat)))
@@ -173,8 +176,8 @@ def run_single(task):
         # (si4pipeline でも空集合は推論エラー = 失敗扱い)
         if active_set is not None and len(active_set) == 0:
             raise RuntimeError("特徴集合が空 (選択された特徴なし)")
-        # eta は (XtX)^-1 Xt の選択行なので eta・X = e_idx から選択特徴を復元
-        selected_index = int(np.argmax(eta.data @ X_np))
+        # 観測データで検定対象に選ばれた特徴量 (methods 側が記録)
+        selected_index = int(methods_lib.last_picked)
 
         oc_p = si.inference(eta=eta, prob_vec=y, var=sigma2, algorithm=algorithm,
                             inference_mode="over_conditioning").p_value

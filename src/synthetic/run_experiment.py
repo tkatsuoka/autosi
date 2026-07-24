@@ -103,10 +103,13 @@ def _data_split_p_value(method, X_np, y_np, Sigma, cfg):
     ds_active = methods_lib.last_active_set
     if ds_active is not None and len(ds_active) == 0:
         raise RuntimeError("データ分割法: 前半で特徴が選ばれなかった")
-    selected = int(np.argmax(eta1.data @ X1_np))
+    selected = int(methods_lib.last_picked)
 
-    # 後半: 選択に使っていないデータで OLS 係数の z 検定
-    eta2 = np.linalg.solve(X2_np.T @ X2_np, X2_np.T)[selected]
+    # 後半: 前半で選ばれた特徴集合だけの重回帰係数を z 検定
+    # (選択モデル。proposed と同じ estimand で公平に揃える)
+    pos = ds_active.index(selected)
+    X2_M = X2_np[:, ds_active]
+    eta2 = np.linalg.solve(X2_M.T @ X2_M, X2_M.T)[pos]
     stat = float(eta2 @ y2_np)
     if np.isscalar(Sigma):
         var_stat = float(Sigma) * float(eta2 @ eta2)
@@ -150,9 +153,8 @@ def run_single(task):
         if active_set is not None and len(active_set) == 0:
             raise RuntimeError("特徴集合が空 (選択された特徴なし)")
 
-        # 観測データで実際に選択された特徴量を復元する。
-        # eta は (XᵀX)⁻¹Xᵀ の選択行なので eta·X ≈ e_idx (選択位置だけ 1) になる。
-        selected_index = int(np.argmax(eta.data @ X_np))
+        # 観測データで検定対象に選ばれた特徴量 (methods 側が記録)
+        selected_index = int(methods_lib.last_picked)
         # 真の活性特徴量は先頭 n_signal 個 (signal!=0 のときのみ、null では活性なし)。
         # is_signal=False の棄却は Type I error なので power 集計から除外できる。
         n_active = min(cfg["n_signal"], cfg["n_features"]) if cfg["signal"] != 0.0 else 0

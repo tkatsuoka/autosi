@@ -67,6 +67,10 @@ uv が extras を外して環境を再同期してしまい pandas 等が消え�
   y と独立に seed から固定するため選択イベントとして正しく追跡される）。
   marginal screening は |Xᵀy| 上位 k 個（`--ms_k` 既定 3）、lasso /
   cv_r2_lasso はアクティブ集合（係数非零の特徴）が「選択された集合」
+- **検定統計量は選択された特徴集合だけを使った重回帰係数**（selected
+  model。si4pipeline と同じ estimand で、条件付けイベントは特徴集合の
+  一致 {M = M_obs} になる）。データ分割法も後半で同じ選択モデルの
+  z 検定を行い、estimand を揃える
 - FPR: n ∈ {100, 200, 300, 400}（`fpr.sh -N`）
 - power: Δ ∈ {0.1, 0.2, 0.3, 0.4}, n = 100 固定（`power.sh -N` で変更可）
 - Lasso の正則化は sklearn と同じ規約 (1/(2n))‖y−Xβ‖² + α‖β‖₁（`--alpha` 既定 0.1）
