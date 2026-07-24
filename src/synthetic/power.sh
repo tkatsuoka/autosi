@@ -20,7 +20,7 @@ source "$(dirname "$0")/../pbs_common.sh"
 
 METHOD=lasso
 DATA_TYPE=iid
-NSAMPLES=200                 # サンプル数 n (固定、si4pipeline の power 実験と同じ)
+NSAMPLES=100                 # サンプル数 n (固定)
 NSPLIT=10                    # Δ ごとのジョブ数 (= 分割数)
 PER=110                      # 1 ジョブが集める有効 p 値の本数 (is_signal / ds_is_signal 各基準)。
                              # 動的モードで不足分は自動追加されるため 10 分割 × 110 = 1100 本/条件が保証される

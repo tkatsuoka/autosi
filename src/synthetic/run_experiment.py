@@ -347,7 +347,7 @@ def main():
     parser.add_argument("--max_trials", type=int, default=None,
                         help="動的モードの試行数上限 (既定: target の 50 倍)。"
                              "選択成功率が極端に低い設定での暴走防止")
-    parser.add_argument("--n_samples", type=int, default=200)
+    parser.add_argument("--n_samples", type=int, default=100)
     parser.add_argument("--n_features", type=int, default=20,
                         help="特徴量数 p")
     parser.add_argument("--signal", type=float, default=0.0,

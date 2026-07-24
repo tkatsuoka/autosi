@@ -72,8 +72,7 @@ uv が extras を外して環境を再同期してしまい pandas 等が消え�
   一致 {M = M_obs} になる）。データ分割法も後半で同じ選択モデルの
   z 検定を行い、estimand を揃える
 - FPR: n ∈ {100, 200, 300, 400}（`fpr.sh -N`）
-- power: Δ ∈ {0.1, 0.2, 0.3, 0.4}, n = 200 固定（n は si4pipeline と同じ。
-  `power.sh -N` / `-s` で変更可）
+- power: Δ ∈ {0.1, 0.2, 0.3, 0.4}, n = 100 固定（`power.sh -N` / `-s` で変更可）
 - Lasso の正則化は sklearn と同じ規約 (1/(2n))‖y−Xβ‖² + α‖β‖₁（`--alpha` 既定 0.1）
 - cv_r2_lasso は K=3 fold、λ グリッドは logspace(-2, -1, 3)
   = {0.01, 0.032, 0.1} の3点。λ_max (= max|x_jᵀy|/n ≈ 0.3〜0.4)
@@ -144,7 +143,7 @@ bash src/synthetic/fpr.sh -m cv_r2_lasso        -d iid
 ### power (検出力)
 
 信号 Δ を振り、`y = Xβ + ε`（先頭 `-k` 個の係数を Δ）で p 値を計算する。
-n は既定 200 に固定される（si4pipeline と同じ。`-N` で変更可）。
+n は既定 100 に固定される（`-N` で変更可）。
 
 条件付き power は「選択に成功した試行」しか集計に使えないため、p 値の
 本数は**動的モード**で確保する: 各ジョブは有効 p 値（proposed 系 =
@@ -182,7 +181,7 @@ uv run --extra experiments python src/synthetic/run_experiment.py --iter 10 --me
 
 主なオプション: `--iter` 反復回数 / `--workers` 並列数 /
 `--methods` `--data_types` カンマ区切りの対象 /
-`--n_samples` (既定 200) `--n_features` (既定 20) `--signal` (0=null)
+`--n_samples` (既定 100) `--n_features` (既定 20) `--signal` (0=null)
 `--n_signal` (既定 3) `--ms_k` (ms の特徴集合サイズ、既定 3) /
 `--seed_start` `--seed_end` `--seed_offset`
 ジョブ分割用 seed 範囲 / `--target_pvalues` 動的モード (有効 p 値がこの
