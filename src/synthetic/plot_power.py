@@ -6,10 +6,9 @@
                                               (= P(棄却 | 信号特徴量を選択))
   marginal_power_<method>_<data_type>.pdf     周辺 power
                                               (= P(信号特徴量を選択 かつ 棄却))
-proposed / w/o-pp / bonferroni / data splitting の 4 曲線を重ねて描く
-(色は FPR プロットと対応。naive は FPR を制御しない invalid な手法の
-ため power には描かない)。無条件 power は「選択に半分のデータしか
-使えない」という DS の弱点も反映した end-to-end の検出力比較になる。
+proposed / w/o-pp / bonferroni の 3 曲線を重ねて描く (色は FPR プロットと
+対応)。naive (FPR を制御しない) と data splitting (corr で type I error を
+制御しない) は power の図には描かない。
 
 使い方 (CSV 単体でもフォルダでも可。フォルダは再帰的に全 CSV を読む):
   python src/synthetic/plot_power.py --csv result/power/lasso_iid_d0.1
@@ -75,14 +74,13 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
     推定する (--n_pvalues は条件付き power 側にのみ適用)。
     """
     # (凡例ラベル, p 値列, 信号選択フラグ列, zorder)。描画順 = 凡例順 =
-    # 色サイクル順で plot_fpr と共通 (naive は FPR を制御しない invalid な
-    # 手法のため power には描かない)。データ分割法は前半のみで選択する
-    # ため、条件付けに使うフラグ列も別 (ds_is_signal)。
+    # 色サイクル順で plot_fpr と共通。naive (FPR を制御しない) と
+    # data splitting (corr で type I error を制御しない) は power の図には
+    # 描かない (CSV には記録済みで、FPR の図には DS も描く)。
     curves = [
         ("proposed", "p_value", "is_signal", 10),
         ("w/o-pp", "oc_p_value", "is_signal", 9),
         ("bonferroni", "bonferroni_p_value", "is_signal", 8),
-        ("data splitting", "ds_p_value", "ds_is_signal", 7),
     ]
 
     plt.rcParams["font.size"] = FONT_SIZE
@@ -142,9 +140,9 @@ def main():
         plot_one(sub, method, data_type, args.alpha, args.outdir,
                  n_pvalues=args.n_pvalues, unconditional=True)
 
-    # power の全図共通の凡例だけの PDF (naive は power に描かないため除く)
+    # power の全図共通の凡例だけの PDF (naive / data splitting は描かないため除く)
     save_legend(os.path.join(args.outdir, "legend_power.pdf"),
-                labels=["proposed", "w/o-pp", "bonferroni", "data splitting"])
+                labels=["proposed", "w/o-pp", "bonferroni"])
 
 
 if __name__ == "__main__":
