@@ -1,9 +1,11 @@
 """実データ実験の結果を論文 Table 1 形式の表に集計する。
 
 各 (手法, サンプル数 n, データセット) の棄却率 P(p 値 < α) を
-「proposed / w/o-pp / bonferroni / ds」の形で並べた表を出力する
+「proposed / w/o-pp / bonferroni」の形で並べた表を出力する
 (実データでの power 指標。naive は invalid のため表には出さないが、
-realdata_summary.csv には全 p 値列の棄却率が入る)。
+realdata_summary.csv には全 p 値列の棄却率が入る。data splitting は
+「DS の前半でも特徴が選ばれた試行」への条件付けが他手法の分母まで
+歪めるため実データ実験では計算しない)。
 
 使い方 (CSV 単体でもフォルダでも可。フォルダは再帰的に全 CSV を読む):
   python src/realdata/plot_realdata.py --csv result/realdata
@@ -19,36 +21,28 @@ from src.common.merge_results import load_results, limit_per_group
 
 def summarize(df, alpha):
     """(手法, n, データセット) ごとの棄却率を縦持ちで集計する。"""
-    aggs = dict(
-        trials=("p_value", "size"),
-        proposed=("p_value", lambda s: (s < alpha).mean()),
-        oc=("oc_p_value", lambda s: (s < alpha).mean()),
-        naive=("naive_p_value", lambda s: (s < alpha).mean()),
-        bonferroni=("bonferroni_p_value", lambda s: (s < alpha).mean()),
-    )
-    # データ分割法 (旧形式 CSV には列が無いので存在チェック)
-    if "ds_p_value" in df.columns:
-        aggs["ds"] = ("ds_p_value", lambda s: (s < alpha).mean())
     return (
         df.groupby(["method", "n_samples", "dataset"])
-        .agg(**aggs)
+        .agg(
+            trials=("p_value", "size"),
+            proposed=("p_value", lambda s: (s < alpha).mean()),
+            oc=("oc_p_value", lambda s: (s < alpha).mean()),
+            naive=("naive_p_value", lambda s: (s < alpha).mean()),
+            bonferroni=("bonferroni_p_value", lambda s: (s < alpha).mean()),
+        )
         .reset_index()
     )
 
 
-def table_legend(summary):
-    """論文形式の表のセル凡例を返す (ds 列は旧形式 CSV に無いことがある)。"""
-    legend = "proposed/w/o-pp/bonferroni"
-    return legend + ("/ds" if "ds" in summary.columns else "")
+# 表セルの並び (naive は invalid のため表には出さない)
+TABLE_LEGEND = "proposed/w/o-pp/bonferroni"
 
 
 def to_paper_table(sub):
     """1 手法分を「行 = n, 列 = データセット, セル = 棄却率の併記」に整形する。"""
-    has_ds = "ds" in sub.columns
 
     def fmt(r):
-        cell = f"{r.proposed:.2f}/{r.oc:.2f}/{r.bonferroni:.2f}"
-        return cell + (f"/{r.ds:.2f}" if has_ds else "")
+        return f"{r.proposed:.2f}/{r.oc:.2f}/{r.bonferroni:.2f}"
 
     cell = sub.assign(cell=sub.apply(fmt, axis=1))
     return cell.pivot(index="n_samples", columns="dataset", values="cell")
@@ -77,12 +71,11 @@ def main():
     print(f"saved {long_path}")
 
     # 手法ごとに論文 Table 1 形式の表を出力
-    legend = table_legend(summary)
     for method, sub in summary.groupby("method"):
         table = to_paper_table(sub)
         path = os.path.join(args.outdir, f"realdata_table_{method}.csv")
         table.to_csv(path)
-        print(f"\n=== {method} : rejection rate ({legend}, alpha={args.alpha}) ===")
+        print(f"\n=== {method} : rejection rate ({TABLE_LEGEND}, alpha={args.alpha}) ===")
         print(table.to_string())
         print(f"saved {path}")
 

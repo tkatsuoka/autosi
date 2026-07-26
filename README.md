@@ -34,7 +34,7 @@ src/
     ├── datasets.py          UCI 8データセットの取得・整形 (data/realdata/ にキャッシュ)
     ├── run_realdata.py      1ジョブ分の計算本体 (サブサンプリング -> p値)
     ├── realdata.sh          実データ実験ドライバ
-    └── plot_realdata.py     棄却率の表 (論文 Table 1 形式: proposed/oc/ds)
+    └── plot_realdata.py     棄却率の表 (論文 Table 1 形式: proposed/oc/bonferroni)
 ```
 
 旧ファイルからの移動対応: `src/synthetic_fpr.sh` → `src/synthetic/fpr.sh`、
@@ -300,8 +300,12 @@ uv run --extra experiments python src/realdata/run_realdata.py --iter 10 --metho
 `plot_realdata.py` は α=0.05 (変更は `--alpha`) の棄却率を
 `realdata_summary.csv` (縦持ち) と、手法ごとの
 `realdata_table_<method>.csv` (行 = n, 列 = データセット,
-セル = proposed/w/o-pp/bonferroni/ds の論文 Table 1 形式。naive は
+セル = proposed/w/o-pp/bonferroni の論文 Table 1 形式。naive は
 invalid のため表に出さないが realdata_summary.csv には含む) に出力する。
+データ分割法は実データ実験では計算しない: DS の前半 (n/2 行) で特徴が
+選ばれなかった試行を落とすと「半分のデータでも信号が拾えるサブサンプル」
+への条件付けが生じ、他手法の棄却率 (特に naive 直結の bonferroni) の
+分母まで歪めるため (DS の比較は合成実験の FPR 図が担う)。
 `--n_pvalues` で各条件 (手法, n, データセット) が使用する p 値の個数を
 seed 順の先頭から揃えられる (既定は全件)。
 
@@ -334,8 +338,8 @@ seed 順の先頭から揃えられる (既定は全件)。
 
 ### 実データ (`run_realdata.py`)
 
-合成データとの差分: `data_type / signal / n_signal / is_signal / ds_is_signal`
-の代わりに (真の信号が未知のため is_signal 系はなし)
+合成データとの差分: `data_type / signal / n_signal / is_signal` と
+`ds_*` 列 (データ分割法は実データでは計算しない) がなく、代わりに
 
 | 列 | 内容 |
 |----|------|

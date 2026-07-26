@@ -39,7 +39,6 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 import pandas as pd
-from scipy.stats import norm
 from tqdm import tqdm
 
 import autosi as si
@@ -115,50 +114,6 @@ def _build_algorithm(method, X, n, p, seed, cfg):
     return algorithm
 
 
-def _data_split_p_value(method, X_np, y_np, sigma2, seed, cfg):
-    """データ分割法 (比較手法): 前半で特徴選択し、後半で古典的 z 検定を行う。
-
-    他手法と同じ n 行を半分ずつ選択と推論に使うため、データ量はフェア。
-    サブサンプルの行順はランダムなので先頭 n/2 での分割で問題ない。
-    後半は半分内で再中心化してから検定する (切片相当)。分散は他手法と
-    同じ全サブサンプルからの推定値 sigma2 を使い、入力条件を揃える。
-
-    Returns
-    -------
-    (p_value, selected_index)
-    """
-    n, p = X_np.shape
-    # 合成側と分割規則を揃えて交互 (奇数番目/偶数番目) に 2 分割する。
-    # サブサンプルの行順はランダムなので統計的には任意の分割と同等
-    idx1 = np.arange(0, n, 2)
-    idx2 = np.arange(1, n, 2)
-    n1 = len(idx1)
-    X1_np, X2_np = X_np[idx1], X_np[idx2]
-    y1_np, y2_np = y_np[idx1], y_np[idx2]
-
-    # 前半: 他手法と同じアルゴリズム (y 中心化込み) を 1 回実行して特徴を選ぶ
-    X1 = si.siarray(X1_np)
-    algorithm = _build_algorithm(method, X1, n1, p, seed, cfg)
-    methods_lib.last_active_set = None
-    eta1 = algorithm(si.siarray(y1_np))
-    ds_active = methods_lib.last_active_set
-    if ds_active is not None and len(ds_active) == 0:
-        raise RuntimeError("データ分割法: 前半で特徴が選ばれなかった")
-    selected = int(methods_lib.last_picked)
-
-    # 後半: 半分内で中心化し、前半で選ばれた特徴集合だけの重回帰係数を
-    # z 検定 (選択モデル。proposed と同じ estimand で公平に揃える)
-    X2c = X2_np - X2_np.mean(axis=0)
-    y2c = y2_np - y2_np.mean()
-    pos = ds_active.index(selected)
-    X2_M = X2c[:, ds_active]
-    eta2 = np.linalg.solve(X2_M.T @ X2_M, X2_M.T)[pos]
-    stat = float(eta2 @ y2c)
-    var_stat = sigma2 * float(eta2 @ eta2)
-    p_value = float(2.0 * norm.sf(abs(stat) / np.sqrt(var_stat)))
-    return p_value, selected
-
-
 def run_single(task):
     """1 試行: サブサンプリング -> eta 取得 -> p 値計算 (時間計測)。"""
     method, dataset, n_samples, seed, cfg = task
@@ -187,13 +142,6 @@ def run_single(task):
             raise RuntimeError("特徴集合が空 (選択された特徴なし)")
         # 観測データで検定対象に選ばれた特徴量 (methods 側が記録)
         selected_index = int(methods_lib.last_picked)
-
-        # データ分割法 (比較手法)。選択 1 回 + z 検定のみで安価なので先に
-        # 計算する (前半で特徴が選ばれず失敗する試行では、後続の高コストな
-        # SI 推論を丸ごと省略できる。synthetic 側と同じ実行順)
-        ds_p, ds_selected = _data_split_p_value(
-            method, X_np, y_np, sigma2, seed, cfg
-        )
 
         oc_p = si.inference(eta=eta, prob_vec=y, var=sigma2, algorithm=algorithm,
                             inference_mode="over_conditioning").p_value
@@ -226,9 +174,6 @@ def run_single(task):
             # lasso/cv のアクティブ集合 (係数非零の特徴、"|" 区切り。ms は空欄)
             "active_set": "" if active_set is None else "|".join(map(str, active_set)),
             "active_size": None if active_set is None else len(active_set),
-            # データ分割法の結果 (選択は前半のみで行うため別に記録)
-            "ds_p_value": ds_p,
-            "ds_selected_index": ds_selected,
         }
     except Exception:
         # 1 試行の失敗 (数値誤差など) で全体を止めない。ログを残して次へ進む。
@@ -246,7 +191,7 @@ def run_dynamic(method, dataset, n_samples, cfg, target, seed_start,
     seed 範囲を固定すると条件ごとに集まる p 値の本数がばらつく。ここでは
     成功率の実測値から必要な追加試行数を見積もり、「波」単位で投入して
     不足分を自動的に埋める。実データでは 1 試行から全手法の p 値
-    (proposed / w-o-pp / bonferroni / ds) が同時に得られるので、
+    (proposed / w-o-pp / bonferroni) が同時に得られるので、
     数えるのは成功試行数だけでよい。
 
     波の大きさはワーカー数の倍数に切り上げる (全コアが埋まり、
@@ -424,7 +369,6 @@ def main():
             reject_proposed=("p_value", lambda s: float((s < 0.05).mean())),
             reject_oc=("oc_p_value", lambda s: float((s < 0.05).mean())),
             reject_bonf=("bonferroni_p_value", lambda s: float((s < 0.05).mean())),
-            reject_ds=("ds_p_value", lambda s: float((s < 0.05).mean())),
             mean_time=("time", "mean"),
         )
         print(summary.to_string())
