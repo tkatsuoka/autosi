@@ -9,6 +9,11 @@ si4pipeline 論文の実データ実験に準拠し、各 (データセット, �
 を繰り返す。実データは真の信号が未知のため、
 power は「棄却率 P(p 値 < α)」として集計する (proposed vs oc の比較)。
 
+実行モードは 2 つ (synthetic の run_experiment.py と同じ方式):
+  固定モード:  --iter (または --seed_start/--seed_end) で試行回数を固定
+  動的モード:  --target_pvalues N で「成功した試行 (p 値) が N 本たまる
+               まで」試行を自動追加 (特徴集合が空の試行などを自動で埋める)
+
 切片の扱い: 本実装の Lasso は切片を学習しないため、X の列中心化に加えて
 y の中心化を「アルゴリズム内で」行う (切片を無罰則で入れるのと等価)。
 中心化は y の線形変換なので autosi がそのまま追跡でき、valid な推論になる。
@@ -183,6 +188,13 @@ def run_single(task):
         # 観測データで検定対象に選ばれた特徴量 (methods 側が記録)
         selected_index = int(methods_lib.last_picked)
 
+        # データ分割法 (比較手法)。選択 1 回 + z 検定のみで安価なので先に
+        # 計算する (前半で特徴が選ばれず失敗する試行では、後続の高コストな
+        # SI 推論を丸ごと省略できる。synthetic 側と同じ実行順)
+        ds_p, ds_selected = _data_split_p_value(
+            method, X_np, y_np, sigma2, seed, cfg
+        )
+
         oc_p = si.inference(eta=eta, prob_vec=y, var=sigma2, algorithm=algorithm,
                             inference_mode="over_conditioning").p_value
         start = time.time()
@@ -192,11 +204,6 @@ def run_single(task):
         naive_p = result.naive_p_value()
         # 比較数は選択パターン総数 2^p (log を渡す仕様)
         bonferroni_p = result.bonferroni_p_value(log_num_comparisons=p * np.log(2))
-
-        # データ分割法 (比較手法)
-        ds_p, ds_selected = _data_split_p_value(
-            method, X_np, y_np, sigma2, seed, cfg
-        )
 
         return {
             "method": method,
@@ -231,6 +238,62 @@ def run_single(task):
         return None
 
 
+def run_dynamic(method, dataset, n_samples, cfg, target, seed_start,
+                seed_offset, workers, max_trials):
+    """成功した試行が target 本たまるまで試行を追加し続ける (動的モード)。
+
+    特徴集合が空になった試行や数値誤差で落ちた試行はスキップされるため、
+    seed 範囲を固定すると条件ごとに集まる p 値の本数がばらつく。ここでは
+    成功率の実測値から必要な追加試行数を見積もり、「波」単位で投入して
+    不足分を自動的に埋める。実データでは 1 試行から全手法の p 値
+    (proposed / w-o-pp / bonferroni / ds) が同時に得られるので、
+    数えるのは成功試行数だけでよい。
+
+    波の大きさはワーカー数の倍数に切り上げる (全コアが埋まり、
+    1 波あたりの実時間が 1 試行分で済む)。seed は seed_start から連番で
+    消費するため、ジョブ分割時は seed_start をブロック単位でずらすこと。
+    """
+    records = []
+    n_failed = 0
+    n_launched = 0
+    next_seed = seed_start + seed_offset
+
+    with ProcessPoolExecutor(max_workers=workers) as ex:
+        wave = 0
+        while len(records) < target:
+            # 成功率は楽観寄りに平滑化 (初回は 1.0 とみなす)
+            n_done = len(records) + n_failed
+            rate = (len(records) + 1) / (n_done + 1)
+            need = (target - len(records)) / rate
+            n_wave = min(int(np.ceil(need / workers)) * workers,
+                         max_trials - n_launched)
+            if n_wave <= 0:
+                print(f"警告: 最大試行数 {max_trials} に到達。p 値が不足 "
+                      f"({len(records)} / 目標 {target})", file=sys.stderr)
+                break
+            wave += 1
+            tasks = [(method, dataset, n_samples, s, cfg)
+                     for s in range(next_seed, next_seed + n_wave)]
+            next_seed += n_wave
+            n_launched += n_wave
+            futures = [ex.submit(run_single, t) for t in tasks]
+            for fut in tqdm(as_completed(futures), total=len(futures),
+                            desc=f"{method}/{dataset} wave{wave}"):
+                try:
+                    rec = fut.result()
+                except Exception:
+                    traceback.print_exc()
+                    rec = None
+                if rec is None:
+                    n_failed += 1
+                else:
+                    records.append(rec)
+
+    print(f"{method}/{dataset} n={n_samples}: 試行 {n_launched} 回で "
+          f"p 値 {len(records)} 本 (目標 {target})")
+    return records, n_failed
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--iter", type=int, default=1000,
@@ -246,6 +309,16 @@ def main():
     parser.add_argument("--seed_end", type=int, default=None)
     parser.add_argument("--seed_offset", type=int, default=0,
                         help="全 seed に加える定数 (手法ごとに変えて独立性を保つ)")
+    # 動的モード: 特徴集合が空などで失敗した試行を自動で埋め、
+    # 条件ごとの p 値の本数を保証する (synthetic の power と同じ方式)
+    parser.add_argument("--target_pvalues", type=int, default=None,
+                        help="動的モード: 成功した試行 (p 値) がこの本数に達する"
+                             "まで試行を追加する。指定時は --iter / --seed_end を"
+                             "無視し、seed は --seed_start から連番で消費する")
+    parser.add_argument("--max_trials", type=int, default=None,
+                        help="動的モードの (条件ごとの) 試行数上限 "
+                             "(既定: target の 50 倍)。失敗率が極端に高い設定での"
+                             "暴走防止")
     parser.add_argument("--out", type=str, default="result/realdata_results.csv")
     # lasso / cv 共通ハイパラ (synthetic と同じ既定)
     parser.add_argument("--alpha", type=float, default=0.1,
@@ -285,45 +358,63 @@ def main():
     seed_start = args.seed_start if args.seed_start is not None else 0
     seed_end = args.seed_end if args.seed_end is not None else args.iter
 
-    tasks = [
-        (method, dataset, args.n_samples, seed + args.seed_offset, cfg)
-        for method in methods
-        for dataset in datasets
-        for seed in range(seed_start, seed_end)
-    ]
-    print(f"methods={methods} datasets={datasets} n={args.n_samples} "
-          f"seeds=[{seed_start},{seed_end})+{args.seed_offset} "
-          f"-> {len(tasks)} tasks")
-
     records = []
     n_failed = 0
-    if args.workers <= 1:
-        for task in tqdm(tasks, desc="realdata"):
-            rec = run_single(task)
-            if rec is not None:
-                records.append(rec)
-            else:
-                n_failed += 1
+    if args.target_pvalues:
+        # 動的モード: (手法 × データセット) ごとに成功試行が目標数に達するまで追加
+        print(f"methods={methods} datasets={datasets} n={args.n_samples} "
+              f"動的モード: 目標 {args.target_pvalues} 本 "
+              f"(seed {seed_start}+{args.seed_offset} から連番)")
+        max_trials = args.max_trials or 50 * args.target_pvalues
+        for method in methods:
+            for dataset in datasets:
+                recs, failed = run_dynamic(
+                    method, dataset, args.n_samples, cfg,
+                    args.target_pvalues, seed_start, args.seed_offset,
+                    max(args.workers, 1), max_trials,
+                )
+                records.extend(recs)
+                n_failed += failed
+        n_total = len(records) + n_failed
     else:
-        with ProcessPoolExecutor(max_workers=args.workers) as ex:
-            futures = [ex.submit(run_single, t) for t in tasks]
-            for fut in tqdm(as_completed(futures), total=len(tasks),
-                            desc="realdata"):
-                # ワーカープロセス自体の異常終了でも全体を止めず次へ進む
-                try:
-                    rec = fut.result()
-                except Exception:
-                    traceback.print_exc()
-                    rec = None
+        tasks = [
+            (method, dataset, args.n_samples, seed + args.seed_offset, cfg)
+            for method in methods
+            for dataset in datasets
+            for seed in range(seed_start, seed_end)
+        ]
+        print(f"methods={methods} datasets={datasets} n={args.n_samples} "
+              f"seeds=[{seed_start},{seed_end})+{args.seed_offset} "
+              f"-> {len(tasks)} tasks")
+
+        if args.workers <= 1:
+            for task in tqdm(tasks, desc="realdata"):
+                rec = run_single(task)
                 if rec is not None:
                     records.append(rec)
                 else:
                     n_failed += 1
+        else:
+            with ProcessPoolExecutor(max_workers=args.workers) as ex:
+                futures = [ex.submit(run_single, t) for t in tasks]
+                for fut in tqdm(as_completed(futures), total=len(tasks),
+                                desc="realdata"):
+                    # ワーカープロセス自体の異常終了でも全体を止めず次へ進む
+                    try:
+                        rec = fut.result()
+                    except Exception:
+                        traceback.print_exc()
+                        rec = None
+                    if rec is not None:
+                        records.append(rec)
+                    else:
+                        n_failed += 1
+        n_total = len(tasks)
 
     df = pd.DataFrame(records)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     df.to_csv(args.out, index=False)
-    failed_note = f" (失敗 {n_failed}/{len(tasks)} 件はスキップ)" if n_failed else ""
+    failed_note = f" (失敗 {n_failed}/{n_total} 件はスキップ)" if n_failed else ""
     print(f"\nsaved {len(df)} rows -> {args.out}{failed_note}")
 
     # データセットごとの棄却率 (実データでの power 指標) を表示

@@ -266,14 +266,28 @@ uv run --extra experiments python src/realdata/plot_realdata.py --csv result/rea
 | `-m` | 手法 (marginal_screening / lasso / cv_r2_lasso) | lasso |
 | `-D` | データセットのリスト | 全8種 |
 | `-N` | サブサンプルのサイズ n のリスト | "100" |
-| `-n` | 分割数 ((データセット, n) ごとのジョブ数) | 22 |
-| `-p` | 1ジョブが計算する p 値の個数 (22 分割 × 5 = 110 本/条件。実質目標 100 + 1 割の予備) | 5 |
+| `-n` | 分割数 ((データセット, n) ごとのジョブ数) | 21 |
+| `-p` | 1ジョブが集める p 値の本数 (21 分割 × 5 = 105 本/条件。動的モードで失敗分は自動追加され本数が保証される) | 5 |
+| `-o` | part 番号の開始 (不足条件の追い炊き投入時に既存 part の上書きと seed の重複を避ける) | 0 |
 | `-w` | 1ジョブ内の並列ワーカー数 (= 要求コア数。5 試行 ÷ 5 コア = 1 巡で完了) | 5 |
 | `-q` | キュー名 | cpu-large |
+
+p 値の本数は動的モード (`--target_pvalues`、合成側の power と同じ方式):
+特徴集合が空になった試行や数値誤差で落ちた試行は自動で追加試行に
+置き換えられるため、各 part は必ず `-p` 本の p 値を出力する。part ごとに
+seed ブロック (幅 10000) を割り当てて重複を防ぐ。
 
 リソース要求はジョブあたり ncpus=5 / mem=26gb / walltime=240:00:00
 (realdata.sh が pbs_common.sh の既定を上書き。96 コアノードに 19 ジョブ
 相乗りできる按分。合成データ側は 96 コア / 512gb / 72 時間のまま)。
+
+固定モードで実行した過去の結果に不足がある場合の追い炊き例
+(part 21 から 2 ジョブ × 3 本 = 6 本を追加。seed ブロックが
+part 番号で決まるため既存の seed と重複しない):
+
+```bash
+bash src/realdata/realdata.sh -m cv_r2_lasso -D "energy_cooling" -o 21 -n 2 -p 3 -q cpu-huge
+```
 
 ローカルで直接実行する場合 (オプションは `run_experiment.py` とほぼ共通、
 `--data_types` の代わりに `--datasets`、`--signal` 系はなし):
