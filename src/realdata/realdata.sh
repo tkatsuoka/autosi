@@ -36,7 +36,8 @@ NSPLIT=21                    # (データセット, n) ごとのジョブ数 (= 
 PER=5                        # 1 ジョブが集める p 値の本数 (21 分割 × 5 = 105 本/条件。
                              # 動的モードで失敗分 (空の特徴集合など) は自動追加され
                              # 本数が保証されるため、余裕は目標 100 本 + 5 本で足りる)
-SEED_STRIDE=10000            # part ごとの seed ブロック幅 (動的モードは試行数が変動するため重複防止)
+SEED_STRIDE=1000             # part ごとの seed ブロック幅 (動的モードは試行数が変動するため重複防止。
+                             # 1 part が消費する seed は最大 max_trials = 50 × PER = 250 個)
 ISTART=0                     # part 番号の開始 (-o。追い炊き投入時に既存 part と衝突させない)
 
 while getopts "m:D:N:n:p:o:w:q:" o; do case $o in
@@ -45,11 +46,13 @@ while getopts "m:D:N:n:p:o:w:q:" o; do case $o in
     w) WORKERS=$OPTARG;; q) QUEUE=$OPTARG;;
 esac; done
 
-# 手法ごとに seed をずらし、手法間で異なるサブサンプル (独立) にする
+# 手法ごとに seed をずらし、手法間で異なるサブサンプル (独立) にする。
+# ブロック幅 100000 は 1 条件が使う seed 幅 (21 part × SEED_STRIDE ≈ 21000) より
+# 十分大きく取ってある。
 case $METHOD in
     marginal_screening) OFFSET=0;;
-    lasso)              OFFSET=1000000;;
-    cv_r2_lasso)        OFFSET=2000000;;
+    lasso)              OFFSET=100000;;
+    cv_r2_lasso)        OFFSET=200000;;
     *)                  OFFSET=0;;
 esac
 

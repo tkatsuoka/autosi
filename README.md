@@ -275,7 +275,9 @@ uv run --extra experiments python src/realdata/plot_realdata.py --csv result/rea
 p 値の本数は動的モード (`--target_pvalues`、合成側の power と同じ方式):
 特徴集合が空になった試行や数値誤差で落ちた試行は自動で追加試行に
 置き換えられるため、各 part は必ず `-p` 本の p 値を出力する。part ごとに
-seed ブロック (幅 10000) を割り当てて重複を防ぐ。
+seed ブロック (幅 1000。1 part の消費は最大 `max_trials` = 250 個) を
+割り当てて重複を防ぎ、手法ごとに 100000 のオフセットを足して
+手法間で異なるサブサンプルにする。
 
 リソース要求はジョブあたり ncpus=5 / mem=26gb / walltime=240:00:00
 (realdata.sh が pbs_common.sh の既定を上書き。96 コアノードに 19 ジョブ
