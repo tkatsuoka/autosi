@@ -2,7 +2,7 @@
 # 検出力 (power) 実験ドライバ。
 # y = Xβ + ε (先頭 N_SIGNAL 個の係数を Δ) でデータを生成し、(Δ × 分割) ごとに
 # PBS ジョブを 1 本ずつ投入する (ジョブ本体は src/jobs/synthetic.pbs)。
-# n は既定 100 に固定 (-N で変更可)。
+# n は既定 200 に固定 (-N で変更可)。
 #
 # 使い方 (プロジェクトルートで実行):
 #   bash src/synthetic/power.sh                                  # 既定で投入
@@ -20,7 +20,7 @@ source "$(dirname "$0")/../pbs_common.sh"
 
 METHOD=lasso
 DATA_TYPE=iid
-NSAMPLES=100                 # サンプル数 n (固定)
+NSAMPLES=200                 # サンプル数 n (固定)
 NSPLIT=10                    # Δ ごとのジョブ数 (= 分割数)
 PER=110                      # 1 ジョブが集める有効 p 値の本数 (is_signal / ds_is_signal 各基準)。
                              # 動的モードで不足分は自動追加されるため 10 分割 × 110 = 1100 本/条件が保証される

@@ -19,3 +19,8 @@ experiments = [
     "openpyxl",
     "xlrd",
 ]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.3.0",
+]
