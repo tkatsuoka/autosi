@@ -17,7 +17,7 @@ FONT_SIZE = 12
 # 凡例ラベル。描画順 = 色サイクル順 (C0, C1, ...) で plot_fpr / plot_power と
 # 一致させること。naive は末尾 (C4) なので、naive を含まない power 用の
 # 凡例でも先頭 4 手法の色は FPR 側と同一になる
-LABELS = ["proposed", "w/o-pp", "bonferroni", "data splitting", "naive"]
+LABELS = ["proposed", "w/o-pp", "bonferroni", "ds", "naive"]
 # 手法ごとのマーカー (LABELS と同順)。曲線が重なっても判別でき、白黒印刷や
 # 色覚多様性にも頑健なように色とマーカーで二重に区別する
 MARKERS = ["o", "s", "^", "D", "x"]

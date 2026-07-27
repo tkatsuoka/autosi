@@ -31,7 +31,7 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
         ("proposed", "p_value", 10),
         ("w/o-pp", "oc_p_value", 9),
         ("bonferroni", "bonferroni_p_value", 8),
-        ("data splitting", "ds_p_value", 7),
+        ("ds", "ds_p_value", 7),
         ("naive", "naive_p_value", 6),
     ]
 
