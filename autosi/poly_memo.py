@@ -1,7 +1,24 @@
 from __future__ import annotations
 
+import os
+from collections import OrderedDict
+
 import numpy as np
 from sicore import RealSubset
+
+# Upper bound on the number of entries kept in each cache. Entries are evicted
+# least-recently-used first once the bound is exceeded.
+#
+# The caches are a pure optimization: a miss only forces recomputation and never
+# changes the returned intervals, so capping them cannot affect any p-value.
+# A bound is required because the key is the byte content of the coefficient
+# arrays, and a single inference() visits a new set of computation sites every
+# time the parametric search changes the algorithm's execution path. Without a
+# bound, memory grows with the number of distinct sites visited (observed at tens
+# of GB per process for cross-validated Lasso).
+#
+# Override with the AUTOSI_MEMO_MAX_ENTRIES environment variable (0 = unbounded).
+MAX_ENTRIES = int(os.environ.get("AUTOSI_MEMO_MAX_ENTRIES", 50000))
 
 
 class PolyMemo:
@@ -22,14 +39,25 @@ class PolyMemo:
 
     Since ``a, b`` change for each p-value, the coefficients (and therefore the key)
     change too, so stale reuse cannot occur. To bound memory, ``reset()`` is called
-    at the start of ``inference()`` and only the most recent entry per sign is kept
-    at each computation site.
+    at the start of ``inference()``, only the most recent entry per sign is kept at
+    each computation site, and each cache holds at most ``MAX_ENTRIES`` sites
+    (least-recently-used evicted first).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, max_entries: int = MAX_ENTRIES) -> None:
         self._enabled = True
-        self._roots: dict = {}   # key -> (roots_den, roots_adj)  level A
-        self._region: dict = {}  # key -> {sign(bool): (lo, hi, result)}  level B
+        self._max_entries = max_entries
+        # OrderedDict so the least-recently-used entry can be evicted in O(1)
+        self._roots: OrderedDict = OrderedDict()   # key -> (roots_den, roots_adj)  level A
+        self._region: OrderedDict = OrderedDict()  # key -> {sign(bool): (lo, hi, result)}  level B
+
+    def _store(self, cache: OrderedDict, key, value) -> None:
+        """Insert into an LRU cache, evicting the oldest entry past the bound."""
+        cache[key] = value
+        cache.move_to_end(key)
+        if self._max_entries > 0:
+            while len(cache) > self._max_entries:
+                cache.popitem(last=False)
 
     # ------------------------------------------------------------------
     # State management
@@ -90,13 +118,16 @@ class PolyMemo:
         if region is not None and sign in region:
             lo, hi, result = region[sign]
             if lo <= z <= hi:
+                self._region.move_to_end(key)  # mark as recently used
                 return result
 
         # Level A: roots are z-invariant, so fetch from cache (compute if absent)
         roots = self._roots.get(key)
         if roots is None:
             roots = (poly_roots(denominators), poly_roots(adj_num))
-            self._roots[key] = roots
+            self._store(self._roots, key, roots)
+        else:
+            self._roots.move_to_end(key)
 
         cond_intervals = iso_from_roots(roots[0], z)  # (n, 2)
         adj_intervals = iso_from_roots(roots[1], z)   # (n, 2)
@@ -106,7 +137,9 @@ class PolyMemo:
         # intervals (contains z)
         lo = max(cond_intervals[:, 0].max(), adj_intervals[:, 0].max())
         hi = min(cond_intervals[:, 1].min(), adj_intervals[:, 1].min())
-        self._region.setdefault(key, {})[sign] = (lo, hi, result)
+        entry = self._region.get(key, {})
+        entry[sign] = (lo, hi, result)
+        self._store(self._region, key, entry)
         return result
 
     def scalar_interval(
@@ -141,6 +174,7 @@ class PolyMemo:
         if region is not None and sign in region:
             lo, hi, result = region[sign]
             if lo <= z <= hi:
+                self._region.move_to_end(key)  # mark as recently used
                 return result
 
         result = calc_polynomial_interval_direct(numerator, denominator, z, threshold)
@@ -155,7 +189,9 @@ class PolyMemo:
                 lo, hi = (~result).find_interval_containing(z)
             except Exception:
                 lo, hi = z, z  # safe fallback: do not reuse the cache
-        self._region.setdefault(key, {})[sign] = (lo, hi, result)
+        entry = self._region.get(key, {})
+        entry[sign] = (lo, hi, result)
+        self._store(self._region, key, entry)
         return result
 
 
