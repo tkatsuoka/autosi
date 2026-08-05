@@ -69,5 +69,6 @@ html_theme_options = {
     ],
     # No outbound AI-service links while the paper is under anonymous review
     "show_ai_links": False,
-    # Repository/social links are added after the anonymous review period
+    # GitHub icon in the header (also enables the repo-stats sidebar data)
+    "github_url": "https://github.com/tkatsuoka/autosi",
 }
