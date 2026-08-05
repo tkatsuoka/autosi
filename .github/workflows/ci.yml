@@ -28,7 +28,7 @@ jobs:
 
       - name: Install the built wheel into a clean environment
         run: |
-          uv venv
+          uv venv --clear
           uv pip install dist/*.whl
 
       - name: Smoke test (end-to-end selective inference)
