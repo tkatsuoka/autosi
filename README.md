@@ -1,5 +1,11 @@
 # AutoSI
 
+[![PyPI](https://img.shields.io/pypi/v/autosi)](https://pypi.org/project/autosi/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://pypi.org/project/autosi/)
+[![License](https://img.shields.io/github/license/tkatsuoka/autosi)](LICENSE)
+[![CI](https://github.com/tkatsuoka/autosi/actions/workflows/ci.yml/badge.svg)](https://github.com/tkatsuoka/autosi/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-online-8A2BE2)](https://tkatsuoka.github.io/autosi/)
+
 **Automatic selective inference for algorithms written as ordinary NumPy-like code.**
 
 Selective inference (SI) provides statistically valid *p*-values for hypotheses selected by applying an algorithm to the data. Until now, developing an SI procedure for a new algorithm required an expert to derive its *selection event* by hand. AutoSI removes this barrier: write the selection algorithm with AutoSI's tracked array operations, run it once on the observed data, and call `asi.inference` — the selection event is derived automatically, and selection events of any polynomial degree (any algorithm expressible through rational functions of the data) are supported.
