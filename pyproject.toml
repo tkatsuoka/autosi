@@ -13,6 +13,7 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/tkatsuoka/autosi"
+Documentation = "https://tkatsuoka.github.io/autosi/"
 
 [dependency-groups]
 docs = [

@@ -4,6 +4,8 @@
 
 Selective inference (SI) provides statistically valid *p*-values for hypotheses selected by applying an algorithm to the data. Until now, developing an SI procedure for a new algorithm required an expert to derive its *selection event* by hand. AutoSI removes this barrier: write the selection algorithm with AutoSI's tracked array operations, run it once on the observed data, and call `asi.inference` — the selection event is derived automatically, and selection events of any polynomial degree (any algorithm expressible through rational functions of the data) are supported.
 
+**[Documentation](https://tkatsuoka.github.io/autosi/)**
+
 ## Installation
 
 ```bash
