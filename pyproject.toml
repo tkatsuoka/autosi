@@ -1,0 +1,25 @@
+[project]
+name = "autosi"
+version = "0.1.0"
+description = "Automatic Selective Inference"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Teruyuki Katsuoka", email = "teruyuki.katsuoka@gmail.com" }]
+dependencies = [
+    "numpy>=1.26.4",
+    "sicore>=3.0.0",
+]
+
+[project.urls]
+Repository = "https://github.com/tkatsuoka/autosi"
+
+[dependency-groups]
+docs = [
+    "sphinx>=8.0",
+    "shibuya",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-check:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Install the built wheel into a clean environment
+        run: |
+          uv venv
+          uv pip install dist/*.whl
+
+      - name: Smoke test (end-to-end selective inference)
+        run: |
+          uv run --no-project python - <<'EOF'
+          import numpy as np
+          import autosi as asi
+
+          rng = np.random.default_rng(0)
+          X = asi.array(rng.normal(size=(50, 5)))
+          y = asi.array(rng.normal(size=50))
+
+          def marginal_screening(y):
+              corr = X.T @ y
+              best = asi.argmax(asi.abs(corr))
+              x_M = X.T[best]
+              return x_M / (x_M @ x_M)
+
+          eta = marginal_screening(y)
+          result = asi.inference(eta=eta, prob_vec=y, var=1.0,
+                                 algorithm=marginal_screening)
+          assert 0.0 <= result.p_value <= 1.0, result.p_value
+          print("smoke test OK, p =", result.p_value)
+          EOF
