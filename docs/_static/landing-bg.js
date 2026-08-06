@@ -53,7 +53,8 @@
           terms.push({
             wl: L.wl[0] + Math.random() * (L.wl[1] - L.wl[0]),
             amp: L.amp[0] + Math.random() * (L.amp[1] - L.amp[0]),
-            phase: Math.random() * 10 - 5,     // initial shift [bump widths]
+            c0: Math.random(),                 // initial center [fraction]
+            phase: Math.random() * Math.PI * 2,    // modulation phase
             speed: (12 + Math.random() * 26)   // horizontal drift [px/s]
                    * (Math.random() < 0.5 ? -1 : 1),
             bfreq: 0.3 + Math.random() * 0.5,      // amplitude cycle [rad/s]
@@ -84,16 +85,26 @@
           ? "hsla(" + c.hue + ", 75%, 72%, 0.26)"
           : "hsla(" + c.hue + ", 60%, 45%, 0.20)";
         ctx.beginPath();
+        // Bump centers wrap around an extended span so that a bump
+        // drifting off one edge re-enters from the other; without the
+        // wrap every bump eventually leaves the screen for good and the
+        // curves degenerate into straight lines.
+        var MARGIN = 500;
+        var span = width + 2 * MARGIN;
         for (var x = 0; x <= width; x += 4) {
           var y = c.base * height + c.slope * (x - width / 2);
           for (var k = 0; k < c.terms.length; k++) {
             var term = c.terms[k];
             // Bump width breathes by +-25% over time
             var wl = term.wl * (1 + 0.25 * Math.sin(t * term.wfreq + term.phase));
-            var u = (x - t * term.speed) / wl + term.phase;
+            var center = (((term.c0 * span + t * term.speed) % span) + span) % span - MARGIN;
+            var u = (x - center) / wl;
+            // Envelope that fades to zero at both wrap boundaries, so the
+            // jump from one edge to the other never causes a visible snap
+            var env = Math.sin(Math.PI * (center + MARGIN) / span);
             // Amplitude swings between -0.4x and +1.0x: bumps grow,
             // flatten, and invert, so the waveform keeps reshaping
-            var amp = Math.min(term.amp, ampCap)
+            var amp = Math.min(term.amp, ampCap) * env
               * (0.3 + 0.7 * Math.sin(t * term.bfreq + term.phase * 2));
             y += amp * (u / (1 + u * u));
           }
