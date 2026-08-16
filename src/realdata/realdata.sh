@@ -15,6 +15,13 @@
 #             -n 分割数((データセット,n)ごとのジョブ数)  -p 1ジョブのp値数
 #             -o part番号の開始 (不足条件の追い炊き投入時に既存 part の
 #                上書きと seed の重複を避ける。例: -o 21 -n 1 -p 5)
+#             -t 実行時間上限 (既定 240:00:00。キューの上限以内で指定すること。
+#                上限に達したジョブは CSV を書かずに失われるため、計算が重い
+#                条件では長めに取る。"none" で walltime 要求を付けずに投入し、
+#                キューの既定値/上限に従う)
+#             -M 未完了の part のみ投入 (出力先に part_i.csv が既にあるものは
+#                完了済みとみなしてスキップ。walltime 超過などで CSV を書けずに
+#                終わった part だけを同じ seed で投げ直す)
 #             -w ワーカー数  -q キュー
 
 set -euo pipefail
@@ -39,11 +46,13 @@ PER=5                        # 1 ジョブが集める p 値の本数 (21 分割
 SEED_STRIDE=1000             # part ごとの seed ブロック幅 (動的モードは試行数が変動するため重複防止。
                              # 1 part が消費する seed は最大 max_trials = 50 × PER = 250 個)
 ISTART=0                     # part 番号の開始 (-o。追い炊き投入時に既存 part と衝突させない)
+ONLY_MISSING=0               # -M: 既に CSV がある part をスキップ (未完了分の再投入)
 
-while getopts "m:D:N:n:p:o:w:q:" o; do case $o in
+while getopts "m:D:N:n:p:o:t:w:q:M" o; do case $o in
     m) METHOD=$OPTARG;; D) DATASETS=$OPTARG;; N) NLIST=$OPTARG;;
     n) NSPLIT=$OPTARG;; p) PER=$OPTARG;; o) ISTART=$OPTARG;;
-    w) WORKERS=$OPTARG;; q) QUEUE=$OPTARG;;
+    t) WALLTIME=$OPTARG;; w) WORKERS=$OPTARG;; q) QUEUE=$OPTARG;;
+    M) ONLY_MISSING=1;;
 esac; done
 
 # 手法ごとに seed をずらし、手法間で異なるサブサンプル (独立) にする。
@@ -66,6 +75,12 @@ for ds in $DATASETS; do
         OUTDIR="result/realdata/${METHOD}/${ds}_n${ns}"
         mkdir -p "$OUTDIR"
         for i in $(seq $ISTART $((ISTART + NSPLIT - 1))); do
+            # -M: CSV が既にある part は完了済み (walltime 超過ジョブは CSV を
+            #     書かない) なのでスキップし、欠けている part だけを投げ直す
+            if [ "$ONLY_MISSING" = 1 ] && [ -f "$OUTDIR/part_${i}.csv" ]; then
+                echo "  スキップ: part_${i} (完了済み)"
+                continue
+            fi
             # 動的モード: 各 part は成功した p 値 PER 本を集めるまで試行を追加する。
             # 消費する seed 数が変動するため、part ごとに SEED_STRIDE 刻みの
             # ブロックを割り当てて重複を防ぐ

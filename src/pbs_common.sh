@@ -23,7 +23,10 @@ mkdir -p "$EO_DIR"                  # 無ければ作成（投入前に用意し
 QUEUE="cpu-large"                   # 既定キュー。ドライバの -q で cpu-huge に切替可能
 WORKERS=96                          # --workers（select の ncpus にもこの値を使う）
 MEM_PER_NODE="512gb"                # 1 ノードあたりのメモリ要求（キューによらず共通）
-WALLTIME="72:00:00"                 # 実行時間上限（キューによらず共通）
+WALLTIME="72:00:00"                 # 実行時間上限（キューによらず共通）。
+                                    # "none" にすると qsub に walltime を渡さず、
+                                    # キューの既定値/上限に従う（キューに上限が
+                                    # 無ければ時間無制限になる。qstat -Qf で確認）
 
 # --- ワーカースクリプト（qsub で投入する実体） ---------------
 SYNTHETIC_JOB="${SRC_DIR}/jobs/synthetic.pbs"   # src/synthetic/run_experiment.py 用
@@ -37,9 +40,14 @@ submit_job() {
     local job_name="$1"
     local job_script="$2"
     local myargs="$3"
+    # WALLTIME="none" のときは walltime 要求を付けない（キューの既定に従う）
+    local wt_opts=()
+    if [ -n "$WALLTIME" ] && [ "$WALLTIME" != "none" ]; then
+        wt_opts=(-l "walltime=${WALLTIME}")
+    fi
     qsub -N "$job_name" -q "$QUEUE" \
          -l "select=1:ncpus=${WORKERS}:mem=${MEM_PER_NODE}" \
-         -l "walltime=${WALLTIME}" \
+         ${wt_opts[@]+"${wt_opts[@]}"} \
          -o "$EO_DIR" -e "$EO_DIR" \
          -v MYARGS="$myargs" "$job_script"
 }

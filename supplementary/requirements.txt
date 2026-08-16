@@ -1,0 +1,12 @@
+# Exact versions used to produce the reported numbers (Python 3.11).
+# Core library dependency
+sicore==3.0.0
+numpy==1.26.4
+scipy==1.16.2
+# Experiment runners and figures
+pandas==3.0.3
+matplotlib==3.10.6
+tqdm==4.67.1
+# Conversion of the UCI Excel files (real-data experiments)
+openpyxl==3.1.5
+xlrd==2.0.2

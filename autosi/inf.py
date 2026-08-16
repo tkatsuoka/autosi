@@ -1,3 +1,12 @@
+"""Entry points computing selective p-values.
+
+:func:`inference` tests a linear statistic ``eta^T y`` (truncated normal);
+:func:`inference_chi` tests a subspace norm ``||P y||`` (truncated chi).
+Both re-run the user's algorithm along the selection line ``y(z) = a + b*z``
+via a parametric search driven by sicore, assembling the truncation region
+from the intervals recorded by the tracked operations.
+"""
+
 from __future__ import annotations
 
 from typing import Callable

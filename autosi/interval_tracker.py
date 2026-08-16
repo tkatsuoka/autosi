@@ -1,3 +1,10 @@
+"""Process-wide accumulator for the truncation region.
+
+The :class:`IntervalTracker` singleton is the hand-off point between the
+user's algorithm and the inference loop: tracked operations read the
+current ``z`` from it and intersect their sign-condition intervals into it.
+"""
+
 from __future__ import annotations
 
 from sicore import RealSubset

@@ -1,3 +1,11 @@
+"""Comparison operators of :class:`~autosi.siarray` (``< > <= >=``).
+
+Each comparison reduces to a sign condition on a rational function of
+``z`` and records the interval on which its outcome is unchanged.
+Equality operators are untracked (see the paper's appendix): non-identical
+rational functions agree only on a null set.
+"""
+
 from __future__ import annotations
 
 import numpy as np

@@ -1,3 +1,10 @@
+"""Indexing and scalar-conversion operators of :class:`~autosi.siarray`.
+
+Getitem/setitem over the coefficient lists plus the scalar dunders
+(``int()``, ``bool()``, indexing) that let tracked values drive ordinary
+Python control flow.
+"""
+
 from __future__ import annotations
 
 import builtins

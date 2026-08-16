@@ -1,3 +1,10 @@
+"""Array-manipulation methods of :class:`~autosi.siarray`.
+
+Shape and layout operations (``T``, ``transpose``, ``reshape``, ``sort``,
+...) applied uniformly to every coefficient array. Sorting operations
+record the ordering comparisons as selection events.
+"""
+
 from __future__ import annotations
 
 import numpy as np

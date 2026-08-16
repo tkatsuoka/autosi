@@ -1,3 +1,13 @@
+"""Memoization of interval computations across the parametric search.
+
+Within one ``inference()`` call the selection line is fixed and only ``z``
+moves, so polynomial roots and iso-sign intervals can be cached and reused
+between the search's re-executions of the algorithm. The caches are a pure
+optimization (a miss only forces recomputation) and are bounded by an LRU
+policy; see :class:`PolyMemo`. Enabled by default and controllable through
+:func:`autosi.set_memoization`.
+"""
+
 from __future__ import annotations
 
 import os

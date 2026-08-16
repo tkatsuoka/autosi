@@ -1,3 +1,9 @@
+"""Arithmetic operators of :class:`~autosi.siarray` (``+ - * / @`` and friends).
+
+All operations are closed over rational functions and impose no constraint
+on ``z``; they only manipulate the stored coefficient lists.
+"""
+
 from __future__ import annotations
 
 import numpy as np

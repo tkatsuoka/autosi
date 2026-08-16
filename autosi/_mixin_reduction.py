@@ -1,3 +1,10 @@
+"""Reduction methods of :class:`~autosi.siarray` (``sum``, ``mean``, ``var``,
+``prod``).
+
+Pure rational arithmetic with no tracking. Fast paths cover the common
+case where every denominator is the constant 1.
+"""
+
 from __future__ import annotations
 
 import numpy as np

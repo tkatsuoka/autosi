@@ -1,3 +1,14 @@
+"""NumPy-like module-level functions operating on :class:`siarray`.
+
+These are the operations users call inside a selection algorithm
+(``asi.abs``, ``asi.argmax``, ``asi.sort``, ...). Selection operations
+(``max`` / ``min`` / ``argmax`` / ``argmin`` / ``sort`` / ``argsort`` /
+``abs``) record the comparisons that fix their outcome as constraints on
+the truncation region; pure arithmetic reductions (``sum`` / ``mean`` /
+``var`` / ``prod``) track nothing. Plain arrays and scalars are wrapped
+into :class:`siarray` automatically.
+"""
+
 from __future__ import annotations
 
 import builtins
@@ -126,76 +137,258 @@ def _reduce_select(x, axis, keepdims, *, want_min, return_index):
 
 
 def max(x, axis=None, keepdims=False):
-    """Maximum (siarray-aware)."""
+    """Return the maximum, recording the selection event.
+
+    The comparisons deciding which element is largest are tracked: the
+    constraints ``selected - other > 0`` are added to the truncation region.
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+    axis : int or None, optional
+        Axis to reduce over. ``None`` (default) reduces over all elements.
+    keepdims : bool, optional
+        Whether to keep the reduced axis as size 1 (default False).
+
+    Returns
+    -------
+    siarray
+        The maximum value(s) as rational functions of ``z``.
+    """
     return _reduce_select(x, axis, keepdims, want_min=False, return_index=False)
 
 
 def min(x, axis=None, keepdims=False):
-    """Minimum (siarray-aware)."""
+    """Return the minimum, recording the selection event.
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+    axis : int or None, optional
+        Axis to reduce over. ``None`` (default) reduces over all elements.
+    keepdims : bool, optional
+        Whether to keep the reduced axis as size 1 (default False).
+
+    Returns
+    -------
+    siarray
+        The minimum value(s) as rational functions of ``z``.
+    """
     return _reduce_select(x, axis, keepdims, want_min=True, return_index=False)
 
 
 def argmax(x, axis=None):
-    """Index of the maximum (siarray-aware)."""
+    """Return the index of the maximum, recording the selection event.
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+    axis : int or None, optional
+        Axis to reduce over. ``None`` (default) reduces over all elements.
+
+    Returns
+    -------
+    siarray
+        The selected index (indices). Convertible with ``int()`` when scalar.
+    """
     return _reduce_select(x, axis, keepdims=False, want_min=False, return_index=True)
 
 
 def argmin(x, axis=None):
-    """Index of the minimum (siarray-aware)."""
+    """Return the index of the minimum, recording the selection event.
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+    axis : int or None, optional
+        Axis to reduce over. ``None`` (default) reduces over all elements.
+
+    Returns
+    -------
+    siarray
+        The selected index (indices). Convertible with ``int()`` when scalar.
+    """
     return _reduce_select(x, axis, keepdims=False, want_min=True, return_index=True)
 
 
 def mean(x, axis=None, keepdims=False):
-    """Mean (siarray-aware)."""
+    """Return the arithmetic mean (pure arithmetic; nothing is tracked).
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+    axis : int or None, optional
+        Axis to reduce over. ``None`` (default) reduces over all elements.
+    keepdims : bool, optional
+        Whether to keep the reduced axis as size 1 (default False).
+
+    Returns
+    -------
+    siarray
+        The mean as rational functions of ``z``.
+    """
     if not isinstance(x, siarray):
         x = siarray(x)
     return x.mean(axis=axis, keepdims=keepdims)
 
 
 def sum(x, axis=None, keepdims=False):
-    """Sum (siarray-aware)."""
+    """Return the sum of elements (pure arithmetic; nothing is tracked).
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+    axis : int or None, optional
+        Axis to reduce over. ``None`` (default) reduces over all elements.
+    keepdims : bool, optional
+        Whether to keep the reduced axis as size 1 (default False).
+
+    Returns
+    -------
+    siarray
+        The sum as rational functions of ``z``.
+    """
     if not isinstance(x, siarray):
         x = siarray(x)
     return x.sum(axis=axis, keepdims=keepdims)
 
 
 def var(x, axis=None, keepdims=False, ddof=0):
-    """Variance (siarray-aware)."""
+    """Return the variance (pure arithmetic; nothing is tracked).
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+    axis : int or None, optional
+        Axis to reduce over. ``None`` (default) reduces over all elements.
+    keepdims : bool, optional
+        Whether to keep the reduced axis as size 1 (default False).
+    ddof : int, optional
+        Delta degrees of freedom; the divisor is ``N - ddof`` (default 0).
+
+    Returns
+    -------
+    siarray
+        The variance as rational functions of ``z``.
+    """
     if not isinstance(x, siarray):
         x = siarray(x)
     return x.var(axis=axis, keepdims=keepdims, ddof=ddof)
 
 
 def prod(x, axis=None, keepdims=False):
-    """Product (siarray-aware)."""
+    """Return the product of elements (pure arithmetic; nothing is tracked).
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+    axis : int or None, optional
+        Axis to reduce over. ``None`` (default) reduces over all elements.
+    keepdims : bool, optional
+        Whether to keep the reduced axis as size 1 (default False).
+
+    Returns
+    -------
+    siarray
+        The product as rational functions of ``z``.
+    """
     if not isinstance(x, siarray):
         x = siarray(x)
     return x.prod(axis=axis, keepdims=keepdims)
 
 
 def sort(x, axis=-1, kind=None, order=None):
-    """Sorted values (siarray-aware)."""
+    """Return the sorted values, recording the selection event.
+
+    The consecutive-rank comparisons fixing the order are tracked as
+    constraints on the truncation region.
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+    axis : int, optional
+        Axis along which to sort (default -1, the last axis).
+    kind, order
+        Accepted for NumPy signature compatibility; ignored.
+
+    Returns
+    -------
+    siarray
+        The sorted array.
+    """
     if not isinstance(x, siarray):
         x = siarray(x)
     return x.sort(axis=axis, kind=kind, order=order)
 
 
 def flatten(x):
-    """1-D copy of the array (siarray-aware)."""
+    """Return a 1-D copy of the array (nothing is tracked).
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+
+    Returns
+    -------
+    siarray
+        The flattened array.
+    """
     if not isinstance(x, siarray):
         x = siarray(x)
     return x.flatten()
 
 
 def abs(x):
-    """Absolute value (siarray-aware)."""
+    """Return the absolute value, recording the selection event.
+
+    Each element contributes its sign condition (``x > 0`` or ``x < 0``) to
+    the truncation region.
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+
+    Returns
+    -------
+    siarray
+        The element-wise absolute value.
+    """
     if not isinstance(x, siarray):
         x = siarray(x)
     return x.__abs__()
 
 
 def argsort(x, axis=-1, kind=None, order=None):
-    """Sort indices (siarray-aware)."""
+    """Return the indices that sort the array, recording the selection event.
+
+    The consecutive-rank comparisons fixing the order are tracked as
+    constraints on the truncation region.
+
+    Parameters
+    ----------
+    x : siarray or array-like
+        Input array.
+    axis : int, optional
+        Axis along which to sort (default -1, the last axis).
+    kind, order
+        Accepted for NumPy signature compatibility; ignored.
+
+    Returns
+    -------
+    siarray
+        The sorting indices.
+    """
     if not isinstance(x, siarray):
         x = siarray(x)
     return x.argsort(axis=axis, kind=kind, order=order)
@@ -302,5 +495,16 @@ def concatenate(arrays: list[siarray], axis: int = 0) -> siarray:
 
 
 def array(X) -> siarray:
-    """Convenience constructor for siarray."""
+    """Wrap a value in a tracked :class:`siarray`.
+
+    Parameters
+    ----------
+    X : np.ndarray, float, int, or siarray
+        Value to wrap. An existing siarray is copied.
+
+    Returns
+    -------
+    siarray
+        The wrapped array (a degree-0 rational function of ``z``).
+    """
     return siarray(X)

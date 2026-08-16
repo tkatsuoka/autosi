@@ -1,3 +1,14 @@
+"""The tracked array type at the core of AutoSI.
+
+:class:`siarray` carries every element as a rational function of the line
+parameter ``z`` instead of a plain number. Arithmetic stays within the
+representation (sums, products, and quotients of rational functions are
+again rational), while comparisons and selections record the interval of
+``z`` on which their outcome is unchanged. The heavy lifting is split into
+operator mixins (``_mixin_*``); this module defines the data structure,
+its constructors, and value access.
+"""
+
 from __future__ import annotations
 
 import numpy as np

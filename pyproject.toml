@@ -24,3 +24,9 @@ experiments = [
 dev = [
     "ipykernel>=7.3.0",
 ]
+# ドキュメント生成 (sphinx-build docs docs/_build):
+#   uv sync --group docs
+docs = [
+    "sphinx>=8.0",
+    "shibuya",
+]

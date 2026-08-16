@@ -16,10 +16,12 @@
 # 使い方 (プロジェクトルートで実行):
 #   bash src/realdata/gas_turbine.sh                       # cv_r2_lasso のみ
 #   bash src/realdata/gas_turbine.sh -m "lasso cv_r2_lasso" -q cpu-huge
+#   bash src/realdata/gas_turbine.sh -M -t none            # 未完了 part のみ・時間上限なしで再投入
 #
 # オプション: -m "手法のリスト" (既定: cv_r2_lasso)  -q キュー
-#             -o part番号の開始  -n 分割数  -p 1ジョブのp値数
-#             (-o / -n / -p は realdata.sh にそのまま渡す。-o を変えると
+#             -o part番号の開始  -n 分割数  -p 1ジョブのp値数  -t 実行時間上限
+#             -M 未完了 (CSV が無い) part のみ投入
+#             (-o / -n / -p / -t / -M は realdata.sh にそのまま渡す。-o を変えると
 #              seed ブロックも変わるので、通常は既定のままにすること)
 
 set -euo pipefail
@@ -28,12 +30,14 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 METHODS="cv_r2_lasso"        # 対象手法 (空白区切り)。重いのは cv_r2_lasso のみ
 PASS_OPTS=()                 # realdata.sh へそのまま渡すオプション
 
-while getopts "m:q:o:n:p:" o; do case $o in
+while getopts "m:q:o:n:p:t:M" o; do case $o in
     m) METHODS=$OPTARG;;
     q) PASS_OPTS+=(-q "$OPTARG");;
     o) PASS_OPTS+=(-o "$OPTARG");;
     n) PASS_OPTS+=(-n "$OPTARG");;
     p) PASS_OPTS+=(-p "$OPTARG");;
+    t) PASS_OPTS+=(-t "$OPTARG");;
+    M) PASS_OPTS+=(-M);;
 esac; done
 
 for m in $METHODS; do

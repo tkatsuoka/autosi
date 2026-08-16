@@ -1,3 +1,13 @@
+"""Polynomial arithmetic and interval computation on coefficient lists.
+
+Polynomials are represented as ascending coefficient lists (``p[i]`` is the
+coefficient of ``z**i``), with array-valued coefficients so that a whole
+siarray shares one list. This module provides the ring operations
+(:func:`poly_add`, :func:`poly_mul`, ...), degree reduction, root finding
+via companion-matrix eigenvalues, and the conversion of sign conditions
+``num/den > 0`` into intervals of ``z``.
+"""
+
 from __future__ import annotations
 
 import builtins
