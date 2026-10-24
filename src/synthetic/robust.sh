@@ -5,7 +5,7 @@
 # (条件 × 分割) ごとに PBS ジョブ 1 本ずつ投入する (本体は src/jobs/synthetic.pbs)。
 #   var   : 分散を同じデータから推定 (σ̂² = RSS/(n-d)) し、サンプル数 n を振る
 #   noise : ノイズを非ガウス分布 (5 分布族) に替え、N(0,1) からの
-#           1-Wasserstein 距離を振る (n は power 実験と同じ 100 に固定)
+#           1-Wasserstein 距離を振る (n は power 実験と同じ 200 に固定)
 # 比較手法は計算せず proposed のみ (--proposed_only)。α ごとの棄却率は
 # 同じ p 値から描画時に計算する (plot_robust.py)。
 #
@@ -31,7 +31,7 @@ source "$(dirname "$0")/../pbs_common.sh"
 METHOD=lasso
 TYPES="var noise"                                          # 投入する実験
 VAR_NSAMPLES="100 200 300 400"                             # var の横軸 (FPR 実験と同じ)
-NOISE_NSAMPLES=100                                         # noise の n (power 実験と同じ)
+NOISE_NSAMPLES=200                                         # noise の n (power 実験と同じ)
 FAMILIES="skewnorm exponnorm gennormsteep gennormflat t"  # 非ガウス分布族
 DISTANCES="0.01 0.02 0.03 0.04"                            # noise の横軸
 NSPLIT=10                    # 条件ごとのジョブ数 (= 分割数)
