@@ -15,9 +15,15 @@ siarray をプロセス間で受け渡さず各 worker 内でデータを生成�
   動的モード:  --target_pvalues N で「有効 p 値 (選択に成功した試行) が
                N 本たまるまで」試行を自動追加 (power 実験向け)
 
+ロバスト性実験 (iid のみ) 用のオプション:
+  --noise / --distance  ノイズを非ガウス分布に差し替える
+  --estimate_var        真の分散ではなく同じデータからの推定値 σ̂² を使う
+  --proposed_only       比較手法 (w/o-pp・DS) を計算せず proposed だけにする
+
 使い方:
   python src/synthetic/run_experiment.py --iter 200 --workers 1
   python src/synthetic/run_experiment.py --signal 0.2 --target_pvalues 110
+  python src/synthetic/run_experiment.py --data_types iid --noise t --distance 0.03 --proposed_only
 """
 
 import os
@@ -41,7 +47,7 @@ from scipy.stats import norm
 from tqdm import tqdm
 
 import autosi as si
-from src.synthetic.data import generate_data
+from src.synthetic.data import NOISES, estimate_sigma2, generate_data
 from src.common import methods as methods_lib
 from src.common.methods import marginal_screening, lasso, cv_r2_lasso
 
@@ -143,7 +149,13 @@ def run_single(task):
             seed=seed,
             signal=cfg["signal"],
             n_signal=cfg["n_signal"],
+            noise=cfg["noise"],
+            distance=cfg["distance"],
         )
+        # ロバスト性実験 (分散推定): 真の分散 1.0 の代わりに同じデータから
+        # 推定した σ̂² を全ての検定に使う (iid のみ。main で検証済み)
+        if cfg["estimate_var"]:
+            Sigma = estimate_sigma2(X_np, y_np)
         X = si.siarray(X_np)
         y = si.siarray(y_np)
 
@@ -173,10 +185,16 @@ def run_single(task):
         # データ分割法 (比較手法)。選択 1 回 + z 検定のみで安価なので先に計算する。
         # 前半だけで選ぶため選択結果は proposed と異なり得る (power の条件付け用
         # フラグ ds_is_signal も別途記録)。
-        ds_p, ds_selected = _data_split_p_value(
-            method, X_np, y_np, Sigma, cfg_local
-        )
-        ds_is_signal = bool(ds_selected < n_active)
+        # proposed_only では計算しない: 前半で選択が空になった試行は例外で
+        # 丸ごと捨てられるため、DS の都合で proposed の標本が欠けるのを防ぐ。
+        if cfg["proposed_only"]:
+            ds_p = ds_selected = None
+            ds_is_signal = False
+        else:
+            ds_p, ds_selected = _data_split_p_value(
+                method, X_np, y_np, Sigma, cfg_local
+            )
+            ds_is_signal = bool(ds_selected < n_active)
 
         # power 実験 (signal!=0) で null 特徴量が選ばれた試行は条件付き power の
         # 集計対象外なので、高コストな SI 推論 (パラメトリック探索) を省略する。
@@ -187,7 +205,12 @@ def run_single(task):
         if cfg["signal"] != 0.0 and (not is_signal or cfg.get("skip_si", False)):
             p_value = oc_p = naive_p = bonferroni_p = elapsed = None
         else:
-            oc_p = float(si.inference(eta=eta, prob_vec=y, var=Sigma, algorithm=algorithm, inference_mode="over_conditioning").p_value)
+            # w/o-pp (over-conditioning) も SI 推論 1 回分のコストがかかるため
+            # proposed_only では省略する
+            if cfg["proposed_only"]:
+                oc_p = None
+            else:
+                oc_p = float(si.inference(eta=eta, prob_vec=y, var=Sigma, algorithm=algorithm, inference_mode="over_conditioning").p_value)
             start = time.time()
             result = si.inference(eta=eta, prob_vec=y, var=Sigma, algorithm=algorithm)
             elapsed = time.time() - start
@@ -213,6 +236,12 @@ def run_single(task):
             "n_features": cfg["n_features"],
             "signal": cfg["signal"],
             "n_signal": cfg["n_signal"],
+            # ロバスト性実験の設定。sigma2 は検定に使った分散 (iid のみ。
+            # estimate_var なら推定値、それ以外は真値 1.0)
+            "noise": cfg["noise"],
+            "distance": cfg["distance"],
+            "estimate_var": cfg["estimate_var"],
+            "sigma2": float(Sigma) if np.isscalar(Sigma) else None,
             # どの設定で走った結果かを CSV 単体で検証できるように記録する
             "K": cfg["K"],
             "n_lambda": cfg["n_lambda"],
@@ -276,7 +305,11 @@ def run_dynamic(method, data_type, cfg, target, seed_start, seed_offset,
                 r_prop = (n_prop + 1) / (n_done + 1)
                 r_ds = (n_ds + 1) / (n_done + 1)
                 need_full = (target - n_prop) / r_prop   # SI 込みで必要な試行数
-                need_total = max(need_full, (target - n_ds) / r_ds)
+                # proposed_only では DS を計算しないので DS の本数は待たない
+                if cfg["proposed_only"]:
+                    need_total = need_full
+                else:
+                    need_total = max(need_full, (target - n_ds) / r_ds)
             if need_total <= 0:
                 break
             n_wave = min(int(need_total * 1.1) + 1, max_trials - n_launched)
@@ -379,6 +412,19 @@ def main():
     parser.add_argument("--n_lambda", type=int, default=3)
     parser.add_argument("--lam_lo", type=float, default=-2.0)
     parser.add_argument("--lam_hi", type=float, default=-1.0)
+    # ロバスト性実験 (iid のみ)
+    parser.add_argument("--noise", type=str, default="gaussian", choices=NOISES,
+                        help="ノイズ分布 (gaussian 以外は分散 1 に標準化した "
+                             "非ガウス分布)")
+    parser.add_argument("--distance", type=float, default=0.0,
+                        help="非ガウスノイズの N(0,1) からの 1-Wasserstein 距離 "
+                             "(0.01〜0.15 を推奨)")
+    parser.add_argument("--estimate_var", action="store_true",
+                        help="検定に真の分散ではなく同じデータからの推定値 "
+                             "σ̂² = RSS/(n-d) を使う")
+    parser.add_argument("--proposed_only", action="store_true",
+                        help="比較手法 (w/o-pp・DS) を計算せず proposed だけにする "
+                             "(naive / bonferroni は追加コストなしで記録される)")
     args = parser.parse_args()
 
     cfg = {
@@ -394,6 +440,10 @@ def main():
         "n_lambda": args.n_lambda,
         "lam_lo": args.lam_lo,
         "lam_hi": args.lam_hi,
+        "noise": args.noise,
+        "distance": args.distance,
+        "estimate_var": args.estimate_var,
+        "proposed_only": args.proposed_only,
     }
 
     # 実行対象の条件を決定 (ジョブ分割に対応)
@@ -408,6 +458,12 @@ def main():
     for d in data_types:
         if d not in DATA_TYPES:
             raise ValueError(f"unknown data_type: {d} (choices: {DATA_TYPES})")
+    # ロバスト性オプションの検証。試行内の例外は「スキップ」として握りつぶされ
+    # 全試行が黙って失敗するため、設定の誤りはここで先に止める
+    if (args.noise != "gaussian" or args.estimate_var) and data_types != ["iid"]:
+        raise ValueError("--noise / --estimate_var は --data_types iid のみ対応")
+    if args.noise != "gaussian" and args.distance <= 0.0:
+        raise ValueError("非ガウスノイズには --distance > 0 を指定する")
 
     records = []
     n_failed = 0
@@ -477,7 +533,8 @@ def main():
             mean_p=("p_value", "mean"),
             # is_signal=False の試行は SI 推論を省略し p 値が空のため除いて集計
             fpr_005=("p_value", lambda s: float((s.dropna() < 0.05).mean())),
-            ds_005=("ds_p_value", lambda s: float((s < 0.05).mean())),
+            # proposed_only では DS が空欄になるため除いて集計
+            ds_005=("ds_p_value", lambda s: float((s.dropna() < 0.05).mean())),
             # power 実験で「信号特徴量が選ばれた試行」の割合 (null では常に 0)
             signal_rate=("is_signal", "mean"),
             ds_signal_rate=("ds_is_signal", "mean"),

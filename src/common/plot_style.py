@@ -29,17 +29,19 @@ def line_style(label):
     return {"marker": MARKERS[i], "color": f"C{i}", "linestyle": "-"}
 
 
-def save_legend(path, labels=None):
+def save_legend(path, labels=None, style_fn=line_style):
     """手法を横一列に並べた凡例だけの PDF を出力する。
 
     labels を省略すると全手法 (LABELS)。power 用など一部の手法だけの
     凡例を出す場合は LABELS の先頭からの部分列を渡す (色対応を保つため)。
+    手法以外 (有意水準・ノイズ分布など) の凡例は、ラベルから線の書式を
+    返す style_fn を渡す。
     """
     labels = LABELS if labels is None else labels
     plt.rcParams["font.size"] = FONT_SIZE
     fig = plt.figure(figsize=(10, 0.5), dpi=DPI)
     handles = [
-        plt.Line2D([], [], label=label, **line_style(label))
+        plt.Line2D([], [], label=label, **style_fn(label))
         for label in labels
     ]
     fig.legend(handles=handles, ncol=len(labels), loc="center")
