@@ -4,9 +4,13 @@
 (手法, データ種別) の組ごとに完全に別ファイル
 (result/fpr_<method>_<data_type>.pdf) を 1 本の折れ線で出力する。
 
+--log_y を付けると縦軸を対数 (symlog) にした図を、ファイル名の末尾に _log を
+付けて別に保存する (既定の図は上書きしない)。
+
 使い方 (CSV 単体でもフォルダでも可。フォルダは再帰的に全 CSV を読む):
   python src/synthetic/plot_fpr.py --csv result/fpr/lasso_iid
   python src/synthetic/plot_fpr.py --csv result/fpr
+  python src/synthetic/plot_fpr.py --csv result/fpr --log_y  # 縦軸を対数に
 """
 
 import os
@@ -15,14 +19,24 @@ import argparse
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import NullLocator
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from src.common.merge_results import load_results, limit_per_group
 from src.common.plot_style import FIGSIZE, DPI, FONT_SIZE, line_style, save_legend
 
+# 対数軸 (--log_y) の設定。bonferroni の type I error は 0 になるため純粋な対数軸では
+# 描けない。0〜LOG_LINTHRESH を線形、それより上を対数にする symlog 軸を使う
+LOG_LINTHRESH = 0.01
+LOG_LINSCALE = 0.3  # 線形部分 (0〜LOG_LINTHRESH) の縦幅。1 で対数 1 桁分
+LOG_YTICKS = [0.0, 0.01, 0.05, 0.1, 0.5, 1.0]
 
-def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
-    """(手法, データ種別) 1 組の FPR 折れ線グラフ (横軸 n, 線 1 本) を描く。"""
+
+def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None, log_y=False):
+    """(手法, データ種別) 1 組の FPR 折れ線グラフ (横軸 n, 線 1 本) を描く。
+
+    log_y=True では縦軸を symlog にし、ファイル名に _log を付ける。
+    """
     # 条件 (サンプル数) ごとに seed 順で先頭 n_pvalues 件だけ使う
     sub = limit_per_group(sub, ["n_samples"], n_pvalues)
     # (凡例ラベル, p 値列, zorder)。描画順 = 凡例順 = 色サイクル順で、
@@ -55,14 +69,22 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None):
                 **line_style(label))
 
     ax.set_xticks(ns)
-    # 主目盛は power の図と揃えて 0.2 刻み、補助目盛 (ラベルなし) を 0.1 刻み
-    ax.set_yticks(np.arange(0.0, 1.01, 0.2))
-    ax.set_yticks(np.arange(0.0, 1.01, 0.1), minor=True)
-    ax.set_ylim(0.0, 1.0)
+    if log_y:
+        ax.set_yscale("symlog", linthresh=LOG_LINTHRESH, linscale=LOG_LINSCALE)
+        ax.set_ylim(0.0, 1.0)
+        ax.set_yticks(LOG_YTICKS)
+        ax.set_yticklabels([f"{t:g}" for t in LOG_YTICKS])
+        ax.yaxis.set_minor_locator(NullLocator())
+    else:
+        # 主目盛は power の図と揃えて 0.2 刻み、補助目盛 (ラベルなし) を 0.1 刻み
+        ax.set_yticks(np.arange(0.0, 1.01, 0.2))
+        ax.set_yticks(np.arange(0.0, 1.01, 0.1), minor=True)
+        ax.set_ylim(0.0, 1.0)
     ax.set_xlabel("Sample size")
     ax.set_ylabel("Type I Error Rate")
     # 凡例は各図には描かず、共通の legend.pdf (save_legend) を使う
-    path = os.path.join(outdir, f"fpr_{method}_{data_type}.pdf")
+    suffix = "_log" if log_y else ""
+    path = os.path.join(outdir, f"fpr_{method}_{data_type}{suffix}.pdf")
     fig.savefig(path, bbox_inches="tight", pad_inches=0.0)
     plt.close(fig)
     print(f"saved {path}")
@@ -77,6 +99,8 @@ def main():
     parser.add_argument("--n_pvalues", type=int, default=None,
                         help="各条件で使用する p 値の個数 (seed 順の先頭から。"
                              "既定: 全件)")
+    parser.add_argument("--log_y", action="store_true",
+                        help="縦軸を対数 (symlog) にし、_log 付きの別名で保存する")
     args = parser.parse_args()
 
     df = load_results(args.csv)
@@ -85,7 +109,7 @@ def main():
     # (手法, データ種別) の組ごとに 1 枚ずつ出力
     for (method, data_type), sub in df.groupby(["method", "data_type"]):
         plot_one(sub, method, data_type, args.alpha, args.outdir,
-                 n_pvalues=args.n_pvalues)
+                 n_pvalues=args.n_pvalues, log_y=args.log_y)
 
     # FPR の全図共通の凡例だけの PDF (naive を含む 5 手法)
     save_legend(os.path.join(args.outdir, "legend_fpr.pdf"))

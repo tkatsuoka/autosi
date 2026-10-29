@@ -9,10 +9,13 @@
 proposed / w/o-pp / bonferroni の 3 曲線を重ねて描く (色は FPR プロットと
 対応)。naive (FPR を制御しない) と data splitting (corr で type I error を
 制御しない) は power の図には描かない。
+--with_ds を付けると、DS が valid な iid の図にだけ data splitting を加え、
+ファイル名の末尾に _ds を付けて別に保存する (既定の図は上書きしない)。
 
 使い方 (CSV 単体でもフォルダでも可。フォルダは再帰的に全 CSV を読む):
   python src/synthetic/plot_power.py --csv result/power/lasso_iid_d0.1
   python src/synthetic/plot_power.py --csv result/power
+  python src/synthetic/plot_power.py --csv result/power --with_ds  # iid に DS を加える
 """
 
 import os
@@ -64,7 +67,7 @@ def _selection_rate(sub, flag_col):
 
 
 def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
-             unconditional=False):
+             unconditional=False, with_ds=False):
     """(手法, データ種別) 1 組の power 折れ線グラフ (横軸 Δ) を描く。
 
     unconditional=True では無条件 power = P(信号特徴量を選択 かつ 棄却)
@@ -72,6 +75,7 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
     「選択に半分のデータしか使えない」弱点を分母から消してしまうため、
     end-to-end の検出力の比較にはこちらが適する。選択成功率は全試行から
     推定する (--n_pvalues は条件付き power 側にのみ適用)。
+    with_ds=True では data splitting の曲線を加え、ファイル名に _ds を付ける。
     """
     # (凡例ラベル, p 値列, 信号選択フラグ列, zorder)。描画順 = 凡例順 =
     # 色サイクル順で plot_fpr と共通。naive (FPR を制御しない) と
@@ -82,6 +86,9 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
         ("w/o-pp", "oc_p_value", "is_signal", 9),
         ("bonferroni", "bonferroni_p_value", "is_signal", 8),
     ]
+    if with_ds:
+        # DS は前半で選んだ特徴量が信号かどうか (ds_is_signal) で条件付ける
+        curves.append(("ds", "ds_p_value", "ds_is_signal", 7))
 
     plt.rcParams["font.size"] = FONT_SIZE
     fig = plt.figure(figsize=FIGSIZE, dpi=DPI)
@@ -113,7 +120,8 @@ def plot_one(sub, method, data_type, alpha, outdir, n_pvalues=None,
     ax.set_ylabel("Power")
     # 凡例は各図には描かず、共通の legend.pdf (save_legend) を使う
     prefix = "marginal_power" if unconditional else "conditional_power"
-    path = os.path.join(outdir, f"{prefix}_{method}_{data_type}.pdf")
+    suffix = "_ds" if with_ds else ""
+    path = os.path.join(outdir, f"{prefix}_{method}_{data_type}{suffix}.pdf")
     fig.savefig(path, bbox_inches="tight", pad_inches=0.0)
     plt.close(fig)
     print(f"saved {path}")
@@ -128,6 +136,9 @@ def main():
     parser.add_argument("--n_pvalues", type=int, default=None,
                         help="各条件で使用する p 値の個数 (is_signal で絞った後、"
                              "seed 順の先頭から。既定: 全件)")
+    parser.add_argument("--with_ds", action="store_true",
+                        help="iid の図に data splitting を加え、_ds 付きの別名で保存する "
+                             "(corr では DS が type I error を制御しないため描かない)")
     args = parser.parse_args()
 
     df = load_results(args.csv)
@@ -135,14 +146,18 @@ def main():
 
     # (手法, データ種別) の組ごとに条件付き / 無条件の 2 枚ずつ出力
     for (method, data_type), sub in df.groupby(["method", "data_type"]):
+        # DS を加える図は DS が valid な iid のみ (corr は既定の図で足りる)
+        if args.with_ds and data_type != "iid":
+            continue
         plot_one(sub, method, data_type, args.alpha, args.outdir,
-                 n_pvalues=args.n_pvalues)
+                 n_pvalues=args.n_pvalues, with_ds=args.with_ds)
         plot_one(sub, method, data_type, args.alpha, args.outdir,
-                 n_pvalues=args.n_pvalues, unconditional=True)
+                 n_pvalues=args.n_pvalues, unconditional=True, with_ds=args.with_ds)
 
-    # power の全図共通の凡例だけの PDF (naive / data splitting は描かないため除く)
-    save_legend(os.path.join(args.outdir, "legend_power.pdf"),
-                labels=["proposed", "w/o-pp", "bonferroni"])
+    # power の全図共通の凡例だけの PDF (naive は描かないため除く。DS は --with_ds のときだけ)
+    labels = ["proposed", "w/o-pp", "bonferroni"] + (["ds"] if args.with_ds else [])
+    name = "legend_power_ds.pdf" if args.with_ds else "legend_power.pdf"
+    save_legend(os.path.join(args.outdir, name), labels=labels)
 
 
 if __name__ == "__main__":
